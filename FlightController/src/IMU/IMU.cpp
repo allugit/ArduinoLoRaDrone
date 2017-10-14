@@ -162,29 +162,31 @@ void IMU::ReadRegister(uint8_t chipSelect, uint8_t bAddr, uint8_t bCntBytes, uin
 {
 	int ib;
 
-
-  noInterrupts();
-
-  SPI.beginTransaction(spiSettings);
+  // noInterrupts();
+  //Serial.println(TIMSK1, BIN);
+  // SPI.beginTransaction(spiSettings);
   // ATOMIC_BLOCK(ATOMIC_FORCEON)
   // {
-    digitalWrite(chipSelect, LOW);
+  EIMSK &= (0 << INT6);
+  digitalWrite(chipSelect, LOW);
 
-    // send first byte indicating the operation will be reading from SPI
-    SPI.transfer(bAddr | (chipSelect == INST_AG ? 0x80 : 0xC0));
+  // send first byte indicating the operation will be reading from SPI
+  SPI.transfer(bAddr | (chipSelect == INST_AG ? 0x80 : 0xC0));
 
-    for(ib = 0; ib < bCntBytes; ib++)
-    {
-      // read from SPI the number of bytes given by bCntBytes
-      uint8_t byte = SPI.transfer(0x00);
-      pData[ib] = byte;
-    }
+  for(ib = 0; ib < bCntBytes; ib++)
+  {
+    // read from SPI the number of bytes given by bCntBytes
+    uint8_t byte = SPI.transfer(0x00);
+    pData[ib] = byte;
+  }
 
-    digitalWrite(chipSelect, HIGH);
+  digitalWrite(chipSelect, HIGH);
+  EIMSK |= (1 << INT6);
   // }
-  SPI.endTransaction();
+  // SPI.endTransaction();
 
-  interrupts();
+  // interrupts();
+  //Serial.println(TIMSK1, BIN);
 }
 
 /*
@@ -194,11 +196,12 @@ void IMU::ReadRegister(uint8_t chipSelect, uint8_t bAddr, uint8_t bCntBytes, uin
 */
 void IMU::WriteSPI(uint8_t chipSelect, uint8_t bAddr, uint8_t bVal)
 {
-  noInterrupts();
-
-  SPI.beginTransaction(spiSettings);
+  // noInterrupts();
+  //
+  // SPI.beginTransaction(spiSettings);
   // ATOMIC_BLOCK(ATOMIC_FORCEON)
   // {
+    // EIMSK |= (0 << INT6);
     digitalWrite(chipSelect, LOW);
 
     //write first byte indicating the operation will be writing
@@ -206,10 +209,11 @@ void IMU::WriteSPI(uint8_t chipSelect, uint8_t bAddr, uint8_t bVal)
     SPI.transfer(bVal);
 
     digitalWrite(chipSelect, HIGH);
+    // EIMSK |= (1 << INT6);
   // }
-  SPI.endTransaction();
-
-  interrupts();
+  // SPI.endTransaction();
+  //
+  // interrupts();
 }
 
 /* ------------------------------------------------------------ */

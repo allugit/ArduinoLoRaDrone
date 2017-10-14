@@ -80,8 +80,8 @@ void printDeviceId()
 }
 
 void setup() {
-  Serial.begin(9600);
-  while(!Serial);
+  // Serial.begin(9600);
+  // while(!Serial);
 
   motorControl.Init(2, 5, 1);
   imu.Init();
@@ -100,9 +100,8 @@ void setup() {
 
 void loop() {
   unsigned long ms = millis();
-
-  imu.ReadGyro(&gyro);
-  imu.ReadAccel(&accl);
+  // delay(100);
+  // Serial.println("asd");
 
   if (handleCommunication) {
     unsigned char* packet = comm.ReceiveRadioPacket();
@@ -115,8 +114,11 @@ void loop() {
     free(packet);
   }
 
+  imu.ReadGyro(&gyro);
+  imu.ReadAccel(&accl);
+
   // no lora packet received for a while, go into safety landing
-  if (ms > lastReceivedPacket + 15000) {
+  if (ms > lastReceivedPacket + 5000) {
     motorControl.SetMotorSpeed(0, 0, 0, 0);
   }
   else if (ms > lastReceivedPacket + 400) {

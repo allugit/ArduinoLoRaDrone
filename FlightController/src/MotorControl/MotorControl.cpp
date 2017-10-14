@@ -20,8 +20,8 @@ Servo ccwf;
 Servo ccwb;
 
 // input, output, setpoint, pid tunings (kp, ki, kd)
-PID PIDPitch(&currentPitch, &controlPitch, &targetPitch, 1, 0, 0, DIRECT);
-PID PIDRoll(&currentRoll, &controlRoll, &targetRoll, 1, 0, 0, DIRECT);
+PID PIDPitch(&currentPitch, &controlPitch, &targetPitch, 0.001, 0, 0, DIRECT);
+PID PIDRoll(&currentRoll, &controlRoll, &targetRoll, 0.001, 0, 0, DIRECT);
 
 void MotorControl::Init(double Kp, double Ki, double Kd)
 {
@@ -243,13 +243,13 @@ void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccw
     ccwb.write(180 * (sccwb > 0.85 ? 0.85 : sccwb));
   }
 
-  Serial.print(scwf);
-  Serial.print(" , ");
-  Serial.println(sccwf);
-  Serial.print(scwb);
-  Serial.print(" , ");
-  Serial.println(sccwb);
-  Serial.println("");
+  // Serial.print(scwf);
+  // Serial.print(" , ");
+  // Serial.println(sccwf);
+  // Serial.print(scwb);
+  // Serial.print(" , ");
+  // Serial.println(sccwb);
+  // Serial.println("");
 
   // 8 bit output compare register A and B
   // (val+1) / 256 = duty cycle (%);

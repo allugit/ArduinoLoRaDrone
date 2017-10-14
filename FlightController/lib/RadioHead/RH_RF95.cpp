@@ -120,6 +120,7 @@ bool RH_RF95::init()
 // We use this to get RxDone and TxDone interrupts
 void RH_RF95::handleInterrupt()
 {
+	sei();
     // Read the interrupt register
     uint8_t irq_flags = spiRead(RH_RF95_REG_12_IRQ_FLAGS);
     if (_mode == RHModeRx && irq_flags & (RH_RF95_RX_TIMEOUT | RH_RF95_PAYLOAD_CRC_ERROR))
@@ -209,10 +210,10 @@ bool RH_RF95::available()
 
 void RH_RF95::clearRxBuf()
 {
-    ATOMIC_BLOCK_START;
+    //ATOMIC_BLOCK_START;
     _rxBufValid = false;
     _bufLen = 0;
-    ATOMIC_BLOCK_END;
+    //ATOMIC_BLOCK_END;
 }
 
 bool RH_RF95::recv(uint8_t* buf, uint8_t* len)
@@ -221,12 +222,12 @@ bool RH_RF95::recv(uint8_t* buf, uint8_t* len)
 	return false;
     if (buf && len)
     {
-	ATOMIC_BLOCK_START;
+	//ATOMIC_BLOCK_START;
 	// Skip the 4 headers that are at the beginning of the rxBuf
 	if (*len > _bufLen-RH_RF95_HEADER_LEN)
 	    *len = _bufLen-RH_RF95_HEADER_LEN;
 	memcpy(buf, _buf+RH_RF95_HEADER_LEN, *len);
-	ATOMIC_BLOCK_END;
+	//ATOMIC_BLOCK_END;
     }
     clearRxBuf(); // This message accepted and cleared
     return true;
