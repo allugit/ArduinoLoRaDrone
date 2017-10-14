@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <SPI.h>
+#include "../lib/Joystick/Joystick.h"
 
 #include "MotorControl/MotorControl.h"
 #include "Communication/Communication.h"
@@ -83,7 +84,7 @@ void setup() {
   // Serial.begin(9600);
   // while(!Serial);
 
-  motorControl.Init(2, 5, 1);
+  motorControl.Init(0, 0, 0);
   imu.Init();
   comm.Init();
 
@@ -107,7 +108,12 @@ void loop() {
     unsigned char* packet = comm.ReceiveRadioPacket();
 
     if (packet != NULL) {
-      motorControl.HandleJoystick(packet[0], packet[1], packet[3], packet[4], packet[2]);
+      JoystickState state = {
+        packet[3], packet[4], packet[5],
+        packet[0], packet[1], packet[2]
+      };
+
+      motorControl.HandleJoystick(state);
       lastReceivedPacket = millis();
     }
 

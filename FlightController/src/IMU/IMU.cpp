@@ -162,11 +162,7 @@ void IMU::ReadRegister(uint8_t chipSelect, uint8_t bAddr, uint8_t bCntBytes, uin
 {
 	int ib;
 
-  // noInterrupts();
-  //Serial.println(TIMSK1, BIN);
-  // SPI.beginTransaction(spiSettings);
-  // ATOMIC_BLOCK(ATOMIC_FORCEON)
-  // {
+  // only disable LoRa interrupt and allow PWM interrupt to interrupt this
   EIMSK &= (0 << INT6);
   digitalWrite(chipSelect, LOW);
 
@@ -182,11 +178,6 @@ void IMU::ReadRegister(uint8_t chipSelect, uint8_t bAddr, uint8_t bCntBytes, uin
 
   digitalWrite(chipSelect, HIGH);
   EIMSK |= (1 << INT6);
-  // }
-  // SPI.endTransaction();
-
-  // interrupts();
-  //Serial.println(TIMSK1, BIN);
 }
 
 /*
@@ -196,24 +187,16 @@ void IMU::ReadRegister(uint8_t chipSelect, uint8_t bAddr, uint8_t bCntBytes, uin
 */
 void IMU::WriteSPI(uint8_t chipSelect, uint8_t bAddr, uint8_t bVal)
 {
-  // noInterrupts();
-  //
-  // SPI.beginTransaction(spiSettings);
-  // ATOMIC_BLOCK(ATOMIC_FORCEON)
-  // {
-    // EIMSK |= (0 << INT6);
-    digitalWrite(chipSelect, LOW);
+  // only disable LoRa interrupt and allow PWM interrupt to interrupt this
+  EIMSK &= (0 << INT6);
+  digitalWrite(chipSelect, LOW);
 
-    //write first byte indicating the operation will be writing
-    SPI.transfer(bAddr | 0x00);
-    SPI.transfer(bVal);
+  //write first byte indicating the operation will be writing
+  SPI.transfer(bAddr | 0x00);
+  SPI.transfer(bVal);
 
-    digitalWrite(chipSelect, HIGH);
-    // EIMSK |= (1 << INT6);
-  // }
-  // SPI.endTransaction();
-  //
-  // interrupts();
+  digitalWrite(chipSelect, HIGH);
+  EIMSK |= (1 << INT6);
 }
 
 /* ------------------------------------------------------------ */
