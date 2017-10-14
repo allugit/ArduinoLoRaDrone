@@ -1,9 +1,4 @@
-#include <Arduino.h>
-#include <Servo.h>
-
 #include "MotorControl.h"
-#include "../IMU/IMU.h"
-#include "../../lib/Arduino-PID/PID_v1.h"
 
 // user controlled and current calculated pitch and roll
 double targetPitch, currentPitch, controlPitch;
@@ -33,8 +28,6 @@ PID PIDRoll(&currentRoll, &controlRoll, &targetRoll, 0, 0, 0, DIRECT);
 
 void MotorControl::Init(double kp, double ki, double kd)
 {
-  // PIDPitch.SetTunings(Kp, Ki, Kd);
-  // PIDRoll.SetTunings(Kp, Ki, Kd);
   PIDPitch.SetOutputLimits(-255, 255);
   PIDRoll.SetOutputLimits(-255, 255);
   PIDPitch.SetMode(AUTOMATIC);
@@ -122,7 +115,6 @@ void MotorControl::HandleJoystick(JoystickState state)
   }
 }
 
-// TODO: use joystick object instead...
 void MotorControl::HandleJoystickCommands(JoystickState* state)
 {
   if (joystickCommandHandled) {
@@ -131,6 +123,8 @@ void MotorControl::HandleJoystickCommands(JoystickState* state)
 
     if (xCenter && yCenter) {
       joystickCommandHandled = 0;
+      PIDPitch.SetTunings(Kp, Ki, Kd);
+      PIDRoll.SetTunings(Kp, Ki, Kd);
     }
   }
   else {
@@ -152,7 +146,6 @@ void MotorControl::HandleJoystickCommands(JoystickState* state)
       else if (state->RY < DIR_DOWN) {
         *pidIndexes[selectedPidIndex % 3] -= PID_INCREMENT;
       }
-
       joystickCommandHandled = 1;
     }
   }

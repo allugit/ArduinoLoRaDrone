@@ -22,13 +22,13 @@ class Communication
 
 	public:
 		void Init();
-		char* ReceiveRadioPacket();
-		void SendRadioPacket(char* packet);
+		unsigned char* ReceiveRadioPacket();
+		void SendRadioPacket(unsigned char* packet);
 
 	private:
-		int ValidatePacket(char* packet);
-		void CalculateCRC(char* data, char length);
-		void XorData(char* data, char length);
+		int ValidatePacket(unsigned char* packet);
+		void CalculateCRC(unsigned char* data, unsigned char length);
+		void XorData(unsigned char* data, unsigned char length);
 };
 
 #endif

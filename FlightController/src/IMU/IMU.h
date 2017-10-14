@@ -1,8 +1,8 @@
 #ifndef IMU_h
 #define IMU_h
 
-#include "Arduino.h"
-#include "SPI.h"
+#include <Arduino.h>
+#include <SPI.h>
 #include <util/atomic.h>
 
 // data structs measurement results

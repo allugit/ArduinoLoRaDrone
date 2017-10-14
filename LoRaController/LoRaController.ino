@@ -1,5 +1,5 @@
-#include "src/Communication/Communication.h"
-#include "src/Joystick/Joystick.h"
+#include <Communication.h>
+#include <Joystick.h>
  
 Communication comm;
 Joystick joystick;
@@ -14,7 +14,7 @@ void loop()
 {
 
   JoystickState state = joystick.GetJoystickAxises();
-  char packet[PAYLOAD_LENGTH];
+  unsigned char packet[PAYLOAD_LENGTH];
   
   packet[0] = state.LX;
   packet[1] = state.LY;

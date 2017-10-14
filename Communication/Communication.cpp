@@ -31,33 +31,36 @@ void Communication::Init()
 	rf95.setTxPower(23, false);
 }
 
-char* Communication::ReceiveRadioPacket()
+unsigned char* Communication::ReceiveRadioPacket()
 {
 	if (rf95.available())
 	{
-		char buf[PAYLOAD_LENGTH];
-		char len = sizeof(buf);
+		unsigned char* buf = (unsigned char*)malloc(PAYLOAD_LENGTH);
+		unsigned char len = PAYLOAD_LENGTH;
 
 		if (rf95.recv(buf, &len))
 		{
 			// RH_RF95::printBuffer("Received: ", buf, len);
 			// Serial.print("RSSI: ");
 			// Serial.println(rf95.lastRssi(), DEC);
-
-			if (ValidatePacket(buf)) {
+			//Serial.println("Receive");
+			if (len == PAYLOAD_LENGTH && ValidatePacket(buf)) {
 				return buf;
 			}
 		}
-		//else
-		//{
-		//	Serial.println("Receive failed");
-		//}
+		else
+		{
+			//Serial.println("Receive failed");
+		}
+	}
+	else {
+		//Serial.println("Not available");
 	}
 
 	return NULL;
 }
 
-void Communication::SendRadioPacket(char* packet)
+void Communication::SendRadioPacket(unsigned char* packet)
 {
 	CalculateCRC(packet, PAYLOAD_LENGTH);
 	XorData(packet, PAYLOAD_LENGTH);
@@ -66,7 +69,7 @@ void Communication::SendRadioPacket(char* packet)
 	rf95.waitPacketSent();
 }
 
-int Communication::ValidatePacket(char* packet)
+int Communication::ValidatePacket(unsigned char* packet)
 {
 	XorData(packet, PAYLOAD_LENGTH);
 	int crc = packet[CRC_POSITION];
@@ -80,9 +83,9 @@ int Communication::ValidatePacket(char* packet)
 	return 0;
 }
 
-void Communication::CalculateCRC(char* data, char length)
+void Communication::CalculateCRC(unsigned char* data, unsigned char length)
 {
-	char i, crc;
+	unsigned char i, crc;
 
 	// CRC is the last byte, won't affect calculation when set to 0
 	data[CRC_POSITION] = 0;
@@ -94,9 +97,9 @@ void Communication::CalculateCRC(char* data, char length)
 	data[CRC_POSITION] = crc;
 }
 
-void Communication::XorData(char* data, char length)
+void Communication::XorData(unsigned char* data, unsigned char length)
 {
-	char i;
+	unsigned char i;
 
 	for (i = 0; i < length; i++) {
 		data[i] ^= XOR_KEY[i % KEY_LEN];

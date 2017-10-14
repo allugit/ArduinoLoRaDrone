@@ -1,7 +1,12 @@
 #ifndef MotorControl_h
 #define MotorControl_h
 
-#include "../../lib/Joystick/Joystick.h"
+#include <Arduino.h>
+#include <Servo.h>
+#include <PID_v1.h>
+
+#include <Joystick.h>
+#include "../IMU/IMU.h"
 
 class MotorControl
 {
