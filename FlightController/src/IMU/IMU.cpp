@@ -1,6 +1,7 @@
 #include "IMU.h"
 
 static SPISettings spiSettings(CLK_SPEED, MSBFIRST, SPI_MODE0);
+struct MAGNO_T mag;
 
 void IMU::Init()
 {
@@ -17,7 +18,7 @@ void IMU::Init()
   // init sensors on IMU
   InitAG(1);
   InitMAG(1);
-  InitALT(1);
+  //InitALT(1);
 
   // the startup range for the accelerometer is +/- 2g, which corresponds to a LSB value of 0.061mg/LSB
   m_GRangeLSB = GetXLRangeLSB(PAR_XL_2G);
@@ -32,7 +33,7 @@ void IMU::Init()
 void IMU::GetDeviceID(struct DEV_ID *id)
 {
 	ReadRegister(INST_AG, WHO_AM_I, 1, &id->ag);
-  ReadRegister(INST_MAG, WHO_AM_I, 1, &id->mag);
+	ReadRegister(INST_MAG, WHO_AM_I, 1, &id->mag);
 	ReadRegister(INST_ALT, WHO_AM_I, 1, &id->alt);
 }
 
@@ -97,6 +98,34 @@ void IMU::ReadAccel(struct ACCL_T *accl)
 	accl->Z = (float)rawAclZ * m_GRangeLSB;
 }
 
+/* ------------------------------------------------------------ */
+/*  Nav::ReadMagGauss(float &MagXGauss, float &MagYGauss, float &MagZGauss)
+**
+**  Parameters:
+**		&MagXGauss	- the output parameter that will receive magnetic value on X axis (in "Gauss")
+**		&MagYGauss	- the output parameter that will receive magnetic value on Y axis (in "Gauss")
+**		&MagZGauss	- the output parameter that will receive magnetic value on Z axis (in "Gauss")
+**
+**  Return Values:
+**      none
+**
+**  Errors:
+**		none
+**  Description:
+**		This function is the main function used for magnetic field values reading, providing the 3 current magnetometer values in “Gauss”.
+**		For each of the three values, converts the 16-bit raw value to the value expressed in “Gauss”, considering the currently selected Gauss range.
+*/
+void IMU::ReadMagPolar(struct POLAR_T *polar)
+{
+	int16_t MagX, MagY, MagZ;
+
+	ReadMag(MagX, MagY, MagZ);
+	mag.X = ConvertReadingToValueGauss(MagX);
+	mag.Y = ConvertReadingToValueGauss(MagY);
+	mag.Z = ConvertReadingToValueGauss(MagZ);
+
+  ConvMagToPolar(&mag, polar);
+}
 
 // pressure in hPa
 float IMU::ReadPressurehPa()
@@ -162,7 +191,6 @@ void IMU::ReadRegister(uint8_t chipSelect, uint8_t bAddr, uint8_t bCntBytes, uin
 {
 	int ib;
 
-  // only disable LoRa interrupt and allow PWM interrupt to interrupt this
   EIMSK &= (0 << INT6);
   digitalWrite(chipSelect, LOW);
 
@@ -187,8 +215,7 @@ void IMU::ReadRegister(uint8_t chipSelect, uint8_t bAddr, uint8_t bCntBytes, uin
 */
 void IMU::WriteSPI(uint8_t chipSelect, uint8_t bAddr, uint8_t bVal)
 {
-  // only disable LoRa interrupt and allow PWM interrupt to interrupt this
-  EIMSK &= (0 << INT6);
+  EIMSK |= (0 << INT6);
   digitalWrite(chipSelect, LOW);
 
   //write first byte indicating the operation will be writing
@@ -197,6 +224,44 @@ void IMU::WriteSPI(uint8_t chipSelect, uint8_t bAddr, uint8_t bVal)
 
   digitalWrite(chipSelect, HIGH);
   EIMSK |= (1 << INT6);
+}
+
+
+/* ------------------------------------------------------------ */
+/*	Nav::WriteRegister(uint8_t bInst, uint8_t bAddr, uint8_t bCntBytes, uint8_t *pData)
+**
+**	Parameters:
+**		bInst			- instrument Chip Select to be used: Accelerometer/Gyro, Magnetometer or Altimeter
+**		bAddr			- register address to start writing bytes to
+**		bCntBytes		- number of bytes to be written via SPI interface
+**		pData			- pointer to the 16 bit data array to be written
+**
+**	Return Value:
+**		none
+**
+**	Errors:
+**		none
+**
+**	Description:
+**		Sends bCntBytes bytes to SPI, to be written in register having consecutive addresses, starting with bAddr.
+*/
+void IMU::WriteRegister(uint8_t bInst, uint8_t bAddr, uint8_t bCntBytes, uint8_t *pData)
+{
+	int ib;
+
+	EIMSK &= (0 << INT6); // INT6 disable
+	digitalWrite(bInst, LOW);
+
+	//write first byte indicating the operation will be writing
+	SPI.transfer(bAddr | (bInst == INST_AG ? 0x00 : 0x40));
+	for(ib = 0; ib < bCntBytes; ib++)
+	{
+		// write to SPI
+		SPI.transfer(pData[ib]);
+	}
+
+	digitalWrite(bInst, HIGH);
+	EIMSK |= (1 << INT6);
 }
 
 /* ------------------------------------------------------------ */
@@ -372,4 +437,272 @@ float IMU::GetMAGRangeLSB(uint8_t bRangeMAG)
 		case PAR_MAG_16GAUSS: return 0.00058;
 		default: return 0.00014;
 	}
+}
+
+/* ------------------------------------------------------------ */
+/*  Nav::ConvertReadingToValueGauss(int16_t rawVal)
+**
+**  Parameters:
+**		rawVal	- the 2 bytes containing the raw reading.
+**
+**  Return Values:
+**      float - the value of the magnetic field in "gauss" corresponding to the 16 bits reading and the currently selected range
+**
+**  Errors:
+**		none
+**  Description:
+**		Converts the value from the 16 bits reading to the float value (in gauss) corresponding to the magnetic field value, considering the current selected gauss range.
+**
+*/
+float IMU::ConvertReadingToValueGauss(int16_t rawVal)
+{
+  float dResult = ((float)rawVal )* m_GaussRangeLSB;
+  return dResult;
+}
+
+/* ------------------------------------------------------------ */
+/*   Nav::SetRangeMAG(uint8_t bRangeMAG)
+**
+**  Parameters:
+**		bRangeMAG	- the parameter specifying the g range. Can be one of the parameters from the following list:
+**					0	PAR_MAG_4GAUSS	Parameter g range : +/- 4g
+**					1	PAR_MAG_8GAUSS	Parameter g range : +/- 8g
+**					2	PAR_MAG_12GAUSS	Parameter g range : +/- 12g
+**					3	PAR_MAG_16GAUSS Parameter g range : +/- 16g
+**
+**  Return Value:
+**		none
+**
+**  Errors:
+**		none
+**
+**  Description:
+**		The function sets the appropriate gauss range bits in the CTRL_REG2_M register.
+**
+*/
+void IMU::SetRangeMAG(uint8_t bRangeMAG)
+{
+	m_GaussRangeLSB = GetMAGRangeLSB(bRangeMAG);
+	SetBitsInRegister(INST_MAG, CTRL_REG2_M, MSK_RANGE_MAG, bRangeMAG, 5);
+}
+/* ------------------------------------------------------------ */
+/*  Nav::GetRangeMAG()
+**
+**  Parameters:
+**		none
+**  Return Value:
+**      uint8_t - returns the previously set range value
+**		The return value is one of:
+**			0	PAR_MAG_4GAUSS		Parameter g range: +/- 4g
+**			1	PAR_MAG_8GAUSS		Parameter g range: +/- 8g
+**			2	PAR_MAG_12GAUSS		Parameter g range: +/- 12g
+**			3	PAR_MAG_16GAUSS 	Parameter g range: +/- 16g
+**  Errors:
+**		none
+**
+**  Description:
+**		The function reads the gauss range bits in the CTRL_REG2_M register and computes the range to be provided to the user.
+**		If value is outside this range, the default value is set
+**
+*/
+uint8_t IMU::GetRangeMAG()
+{
+	uint8_t readRange, gRange;
+	readRange = GetBitsInRegister(INST_MAG, CTRL_REG2_M, 5, 2);
+	switch(readRange)
+	{
+		case PAR_MAG_4GAUSS:
+			gRange = 4;
+			break;
+		case PAR_MAG_8GAUSS:
+			gRange = 8;
+			break;
+		case PAR_MAG_12GAUSS:
+			gRange = 12;
+			break;
+		case PAR_MAG_16GAUSS:
+			gRange = 16;
+			break;
+		default:
+			gRange = 4;
+			break;
+	}
+	return gRange;
+}
+
+/* ------------------------------------------------------------ */
+/*  Nav::GetBitsInRegister(uint8_t bInst, uint8_t bRegAddr, uint8_t startBit, uint8_t noBits)
+**
+**  Parameters:
+**		bInst				- instrument selection for chip select: AG/MAG/ALT
+**		bRegAddr		 	- the address of the register whose bits are set
+**		startBit			- start bit of the bits group to be set in register
+**		noBits				- number of bits starting from start bit, to be read
+**
+**   Return Values:
+**      none
+**   Errors:
+**		none
+**   Description:
+**		This function gets the value of some bits (given by the startBts and noBits parameters) of a register (indicated by bRegisterAddress).
+**
+*/
+uint8_t IMU::GetBitsInRegister(uint8_t bInst, uint8_t bRegAddr, uint8_t startBit, uint8_t noBits)
+{
+	uint8_t bRegValue, bResult, bMask;
+	ReadRegister(bInst, bRegAddr, 1, &bRegValue);
+	bMask = ((1<<noBits)-1)<< startBit;
+	bResult = (bRegValue & bMask) >> startBit;
+
+	return bResult;
+}
+/* ------------------------------------------------------------ */
+/*   Nav::SetRegisterBits(uint8_t bInst, uint8_t bRegAddr, uint8_t bMask, bool fValue)
+**
+**   Parameters:
+**		bInst				- instrument selection for chip select: AG/MAG/ALT
+**		bRegAddr		 	- the address of the register whose bits are set
+**		bMask				- the mask indicating which bits are affected
+**		fValue				- 1 if the bits are set or 0 if their bits are reset
+**
+**   Return Values:
+**      none
+**   Errors:
+**		none
+**   Description:
+**		This function sets the value of some bits (corresponding to the bMask) of a register (indicated by bRegAddr) to 1 or 0 (indicated by fValue).
+**
+*/
+void IMU::SetRegisterBits(uint8_t bInst, uint8_t bRegAddr, uint8_t bMask, bool fValue)
+{
+	uint8_t bRegValue;
+	ReadRegister(bInst, bRegAddr, 1, &bRegValue);
+	if(fValue)
+	{
+		// set 1 value to the values that are 1 in the mask
+		bRegValue |= bMask;
+	}
+	else
+	{
+		// set 0 value to the values that are 1 in the mask
+		bRegValue &= ~bMask;
+	}
+	WriteRegister(bInst, bRegAddr, 1, &bRegValue);
+}
+
+
+/*   Nav::ReadMag(int16_t &MagX, int16_t &MagY, int16_t &MagZ)
+**
+**  Parameters:
+**		&MagX	- the output parameter that will receive magnetometer value on X axis - 16 bits value
+**		&MagY	- the output parameter that will receive magnetometer value on Y axis - 16 bits value
+**		&MagZ	- the output parameter that will receive magnetometer value on Z axis - 16 bits value
+**
+**  Return Values:
+**      none
+**
+**  Errors:
+**		none
+**  Description:
+**		This function provides the 3 "raw" 16-bit values read from the magnetometer.
+**			-	It reads simultaneously the magnetic field value on three axes in a buffer of 6 bytes using the ReadRegister function
+**			-	For each of the three axes, combines the two bytes in order to get a 16-bit value
+**
+*/
+void IMU::ReadMag(int16_t &MagX, int16_t &MagY, int16_t &MagZ)
+{
+	uint8_t iMagX_L, iMagX_H, iMagY_L;
+	int8_t iMagY_H, iMagZ_L, iMagZ_H;
+	uint8_t rgwRegVals[6];
+
+	//reads the bytes using the incremeting address functionality of the device.
+	ReadRegister(INST_MAG, OUT_X_L_M, 6, (uint8_t *)rgwRegVals);
+	iMagX_L = rgwRegVals[0];
+	iMagX_H = rgwRegVals[1];
+	iMagY_L = rgwRegVals[2];
+	iMagY_H = rgwRegVals[3];
+	iMagZ_L = rgwRegVals[4];
+	iMagZ_H = rgwRegVals[5];
+	//combines the read values for each axis to obtain the 16-bits values
+	MagX = ((int16_t)iMagX_H << 8) | iMagX_L;
+	MagY = ((int16_t)iMagY_H << 8) | iMagY_L;
+	MagZ = ((int16_t)iMagZ_H << 8) | iMagZ_L;
+	// MagX = (int16_t)(((uint16_t)iMagX_H << 8) | iMagX_L);
+	// MagY = (int16_t)(((uint16_t)iMagY_H << 8) | iMagY_L);
+	// MagZ = (int16_t)(((uint16_t)iMagZ_H << 8) | iMagZ_L);
+}
+
+/* ------------------------------------------------------------ */
+/*  Nav::ConvMagToPolar(float mXGauss, float mYGauss, float mZGauss)
+**
+**  Parameters:
+**		mXGauss, mYGauss, mZGauss - the magnetic field values for all the three axes
+**  Return Value:
+**      POLAR_T - returns the POLAR_T structure members values
+**
+**  Errors:
+**		none
+**  Description:
+**		The function computes the R and D, polar coordinates of the magnetic field.
+**		Updates the POLAR_T structure members D and R with the calculated values -  degrees of declination for D,
+**		to further help indicate North, in compass functioning.
+**
+*/
+void IMU::ConvMagToPolar(struct MAGNO_T *mag, struct POLAR_T *polar)
+{
+	//update the POLAR_T structure member R with the field resultant
+	polar->R = sqrt(pow(mag->X,2) + pow(mag->Y,2) + pow(mag->Z,2));
+	//calculate the declination using two of the axes values, X and Y and reduce to first quadrant the values
+	if (mag->X == 0)
+  {
+    polar->D = (mag->Y < 0) ? 90 : 0;
+  }
+	else
+  {
+    polar->D = atan2(mag->Y,mag->X)*180/PI;
+  }
+
+	if (polar->D > 360)
+	{
+		polar->D -= 360;
+	}
+	else if (polar->D<0)
+	{
+		polar->D += 360;
+	}
+}
+/*-------------------------------------------------------------*/
+/*	Bits Specific Functions
+/* ------------------------------------------------------------ */
+/* ------------------------------------------------------------ */
+/*   Nav::SetBitsInRegister(uint8_t bInst, uint8_t bRegAddr, uint8_t bMask, uint8_t bValue, uint8_t startBit)
+**
+**   Parameters:
+**		bInst				- instrument selection for chip select: AG/MAG/ALT
+**		bRegAddr		 	- the address of the register whose bits are set
+**		bMask				- the mask indicating which bits are affected
+**		bValue				- the byte containing bits values
+**		startBit			- start bit of the bits group to be set in register
+**
+**   Return Values:
+**       none
+**   Errors:
+**		none
+**   Description:
+**		This function sets the value of some bits (corresponding to the bMask) of a register (indicated by bRegAddr) to the value of the corresponding bits from another byte (indicated by bValue)
+**		starting from the position indicated by startBit.
+**
+*/
+void IMU::SetBitsInRegister(uint8_t bInst, uint8_t bRegAddr, uint8_t bMask, uint8_t bValue, uint8_t startBit)
+{
+	uint8_t bRegValue, shiftedValue;
+	shiftedValue = (bValue << startBit);
+	ReadRegister(bInst, bRegAddr, 1, &bRegValue);
+	// register value: mask out the bits from the mask
+	bRegValue &= ~bMask;
+	// value: mask out the values outside the mask
+	shiftedValue &= bMask;
+	// combine the value with the masked register value
+	bRegValue |= (shiftedValue & bMask);
+	WriteRegister(bInst, bRegAddr, 1, &bRegValue);
 }
