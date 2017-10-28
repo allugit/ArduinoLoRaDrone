@@ -6,7 +6,7 @@
 #include <PID_v1.h>
 
 #include <Joystick.h>
-#include "../IMU/IMU.h"
+#include "IMU/IMU.h"
 
 class MotorControl
 {
@@ -17,15 +17,16 @@ class MotorControl
 
   #define JOYSTICK_CENTER 125
   #define JOYSTICK_THRESHOLD 3
-  #define JOYSTICK_COMMAND_THRESHOLD 30
+  #define JOYSTICK_COMMAND_THRESHOLD 100
   #define DIR_DOWN JOYSTICK_CENTER - JOYSTICK_COMMAND_THRESHOLD
   #define DIR_UP JOYSTICK_CENTER + JOYSTICK_COMMAND_THRESHOLD
-  #define DIR_LEFT JOYSTICK_CENTER - JOYSTICK_COMMAND_THRESHOLD
-  #define DIR_RIGHT JOYSTICK_CENTER + JOYSTICK_COMMAND_THRESHOLD
-  #define PID_INCREMENT 1
+  #define DIR_LEFT JOYSTICK_CENTER + JOYSTICK_COMMAND_THRESHOLD
+  #define DIR_RIGHT JOYSTICK_CENTER - JOYSTICK_COMMAND_THRESHOLD
+  #define PID_INCREMENT 0.5
 
   // low pass ratio for ComplementaryFilter
-  #define LOW_PASS_RATIO 0.05
+  #define DEFAULT_ACCL_RATIO 0.02
+
   #define PITCH_LIMIT 30
   #define ROLL_LIMIT 30
   #define YAW_LIMIT 20
@@ -38,6 +39,7 @@ class MotorControl
 
 	private:
     void HandleJoystickCommands(JoystickState* state);
+    void BlinkLed(int blinkTime, int count);
     int WaitForHoldCommand(unsigned long* start, int holdTime);
     void ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro, float deltaTime);
     void AcclAngle(struct ACCL_T *accl);

@@ -28,7 +28,7 @@ class Joystick
     private:
         void DebugJoystick(JoystickState state);
         void ScaleAxisValues(int *x, int *y, int *z);
-        bool IsCenter(int axisValue);
+        bool IsCenter(int* axisValue);
         int Clamp(int value, int min, int max);
 };
 

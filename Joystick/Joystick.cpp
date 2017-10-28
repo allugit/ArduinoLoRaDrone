@@ -64,14 +64,14 @@ void Joystick::DebugJoystick(JoystickState state)
 
 void Joystick::ScaleAxisValues(int *x, int *y, int *z)
 {
-    *x = IsCenter(*x) ? 500 : Clamp(*x, LX_MIN, LX_MAX);
-    *y = IsCenter(*y) ? 500 : Clamp(*y, LX_MIN, LX_MAX);
+    *x = IsCenter(x) ? 500 : Clamp(*x, LX_MIN, LX_MAX);
+    *y = IsCenter(y) ? 500 : Clamp(*y, LX_MIN, LX_MAX);
 }
 
-bool Joystick::IsCenter(int axisValue)
+bool Joystick::IsCenter(int* axisValue)
 {
-    bool overUpperThreshold = axisValue > JOYSTICK_ADC_CENTER + JOYSTICK_CENTER_THRESHOLD;
-    bool overLowerThreshold = axisValue < JOYSTICK_ADC_CENTER - JOYSTICK_CENTER_THRESHOLD;
+    bool overUpperThreshold = *axisValue > JOYSTICK_ADC_CENTER + JOYSTICK_CENTER_THRESHOLD;
+    bool overLowerThreshold = *axisValue < JOYSTICK_ADC_CENTER - JOYSTICK_CENTER_THRESHOLD;
 
     return !(overUpperThreshold || overLowerThreshold);
 }

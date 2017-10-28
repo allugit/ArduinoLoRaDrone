@@ -16,15 +16,16 @@ Communication comm;
 MotorControl motorControl;
 IMU imu;
 
-struct GYRO_T gyro;
-struct ACCL_T accl;
-float temp;
-float pressure;
-float altitude;
-
 unsigned long lastReceivedPacket;
 unsigned long lastLoopUpdate;
 int loops;
+
+struct GYRO_T gyro;
+struct ACCL_T accl;
+struct POLAR_T polar;
+float temp;
+float pressure;
+float altitude;
 
 void debugIMU(int debugMask);
 void printDeviceId();
@@ -34,9 +35,9 @@ void setup() {
   // Serial.begin(9600);
   // while(!Serial);
 
-  motorControl.Init(0, 0, 0);
-  imu.Init();
   comm.Init();
+  imu.Init();
+  motorControl.Init(0, 0.02, 0);
 
 	lastReceivedPacket = 0;
   lastLoopUpdate = 0;
@@ -44,11 +45,16 @@ void setup() {
 
   imu.ReadGyro(&gyro);
   imu.ReadAccel(&accl);
+  imu.ReadMagPolar(&polar);
 }
 
 void loop() {
   unsigned long ms = millis();
   unsigned char* packet = comm.ReceiveRadioPacket();
+
+  imu.ReadGyro(&gyro);
+  imu.ReadAccel(&accl);
+  imu.ReadMagPolar(&polar);
 
   if (packet != NULL) {
     JoystickState state = {
@@ -62,27 +68,27 @@ void loop() {
 
   free(packet);
 
-  imu.ReadGyro(&gyro);
-  imu.ReadAccel(&accl);
-
   // no lora packet received for a while, go into safety landing
-  if (ms > lastReceivedPacket + 5000) {
+  if (ms > lastReceivedPacket + 15000) {
     motorControl.SetMotorSpeed(0, 0, 0, 0);
   }
   else if (ms > lastReceivedPacket + 400) {
-    // TODO: set target pitch and roll instead
-    motorControl.SetMotorSpeed(0.3, 0.3, 0.3, 0.3);
+    // todo: set target roll/pitch and throttle
+    motorControl.SetMotorSpeed(0.35, 0.35, 0.35, 0.35);
   }
   else {
     motorControl.CalculateTargetAngles(&accl, &gyro);
   }
 
-  calculateLoops();
+  //calculateLoops();
   // temp = imu.ReadTempC();
   // pressure = imu.ReadPressurehPa();
   // altitude = imu.ConvPresToAltM(pressure);
-  //debugIMU(DEBUG_GYRO | DEBUG_TEMP);
+  //debugIMU(DEBUG_GYRO | DEBUG_ACCL);
   //printDeviceId();
+  // Serial.print(polar.R);
+  // Serial.print(" ");
+  // Serial.println(polar.D);
 }
 
 
@@ -93,7 +99,7 @@ void calculateLoops()
 
   if (millis() > lastLoopUpdate + 1000)
   {
-    Serial.println(loops);
+    Serial.println(loops, DEC);
     loops = 0;
     lastLoopUpdate = millis();
   }

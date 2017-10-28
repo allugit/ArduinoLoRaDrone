@@ -6,12 +6,14 @@ double targetRoll, currentRoll, controlRoll;
 unsigned char targetThrottle;
 
 // PID tunings: porpotional, integral, derivative
-double Kp, Ki, Kd;
+double Kp, Ki, Kd; // current values
+double dKp, dKi, dKd; // default values
 double* pidIndexes[3];
+double acclRatio;
 
 unsigned long lastUpdate;
-unsigned long holdCommandStart;
-unsigned long resetCommandStart;
+unsigned long flightCommandStart;
+unsigned long configCommandStart;
 unsigned char selectedPidIndex;
 int joystickCommandHandled;
 
@@ -28,13 +30,17 @@ PID PIDRoll(&currentRoll, &controlRoll, &targetRoll, 0, 0, 0, DIRECT);
 
 void MotorControl::Init(double kp, double ki, double kd)
 {
-  PIDPitch.SetOutputLimits(-255, 255);
-  PIDRoll.SetOutputLimits(-255, 255);
   PIDPitch.SetMode(AUTOMATIC);
   PIDRoll.SetMode(AUTOMATIC);
 
+  PIDPitch.SetOutputLimits(-30, 30);
+  PIDRoll.SetOutputLimits(-30, 30);
+
+  PIDPitch.SetTunings(kp, ki, kd);
+  PIDRoll.SetTunings(kp, ki, kd);
+
   // 5 ms sample time, 200 Hz
-  // for quadcopter this should be quite fast
+  // this should be fast enough
   PIDPitch.SetSampleTime(5);
   PIDRoll.SetSampleTime(5);
 
@@ -53,19 +59,27 @@ void MotorControl::Init(double kp, double ki, double kd)
   targetPitch = 0;
   targetRoll = 0;
 
-  Kp = kp;
-  Ki = ki;
-  Kd = kd;
+  // for joystick PID configuration
+  dKp = Kp = kp;
+  dKi = Ki = ki;
+  dKd = Kd = kd;
   pidIndexes[0] = &Kp;
   pidIndexes[1] = &Ki;
   pidIndexes[2] = &Kd;
 
+  acclRatio = DEFAULT_ACCL_RATIO;
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+
   SetMotorSpeed(0,0,0,0);
   delay(3000);
 
+  digitalWrite(LED_BUILTIN, LOW);
+
   flightActive = 0;
-  holdCommandStart = 0;
-  resetCommandStart = 0;
+  flightCommandStart = 0;
+  configCommandStart = 0;
   joystickCommandHandled = 0;
   selectedPidIndex = 0;
   lastUpdate = millis();
@@ -93,13 +107,15 @@ void MotorControl::HandleJoystick(JoystickState state)
   // scale against max pitch and roll
   targetPitch = state.RY * (PITCH_LIMIT * 2.0f / 255.0f) - PITCH_LIMIT;
   targetRoll = state.RX * (ROLL_LIMIT * 2.0f / 255.0f) - ROLL_LIMIT;
+  if (abs(targetPitch) < 1) targetPitch = 0;
+  if (abs(targetRoll) < 1) targetRoll = 0;
 
   // hold right stick 1s to turn off motors
   if (state.RZ) {
-    holdCommandStart = 0;
+    flightCommandStart = 0;
   }
   else {
-    if (WaitForHoldCommand(&holdCommandStart, 1000)) {
+    if (WaitForHoldCommand(&flightCommandStart, 1000)) {
       flightActive = 0;
     }
   }
@@ -118,35 +134,70 @@ void MotorControl::HandleJoystick(JoystickState state)
 void MotorControl::HandleJoystickCommands(JoystickState* state)
 {
   if (joystickCommandHandled) {
-    int xCenter = state->RX > DIR_LEFT && state->RX < DIR_RIGHT;
+    int xCenter = state->RX < DIR_LEFT && state->RX > DIR_RIGHT;
     int yCenter = state->RY > DIR_DOWN && state->RY < DIR_UP;
 
     if (xCenter && yCenter) {
-      joystickCommandHandled = 0;
       PIDPitch.SetTunings(Kp, Ki, Kd);
       PIDRoll.SetTunings(Kp, Ki, Kd);
+
+      Serial.println(selectedPidIndex % 3);
+      Serial.println(acclRatio);
+      Serial.print(PIDPitch.GetKp());
+      Serial.print(" ");
+      Serial.print(PIDPitch.GetKi());
+      Serial.print(" ");
+      Serial.println(PIDPitch.GetKd());
+      Serial.print(PIDRoll.GetKp());
+      Serial.print(" ");
+      Serial.print(PIDRoll.GetKi());
+      Serial.print(" ");
+      Serial.println(PIDRoll.GetKd());
+
+      if (joystickCommandHandled == 5) {
+        BlinkLed(3000, 1);
+      }
+      else {
+        BlinkLed(250, joystickCommandHandled);
+      }
+
+      joystickCommandHandled = 0;
     }
   }
   else {
-    if (state->RX < DIR_LEFT) {
-      if (WaitForHoldCommand(&resetCommandStart, 1000)) {
-        joystickCommandHandled = 1;
-        Kp = 0;
-        Ki = 0;
-        Kd = 0;
+    if (!state->LZ) {
+      if (WaitForHoldCommand(&configCommandStart, 2000)) {
+        acclRatio = acclRatio == DEFAULT_ACCL_RATIO ? 0 : DEFAULT_ACCL_RATIO;
+        currentRoll = 0;
+        currentPitch = 0;
+        joystickCommandHandled = 4;
+      }
+    }
+    else if (state->RX > DIR_LEFT) {
+      if (WaitForHoldCommand(&configCommandStart, 2000)) {
+        Kp = dKp; Ki = dKi; Kd = dKd;
+        joystickCommandHandled = 5;
       }
     }
     else {
-      if (state->RX > DIR_RIGHT) {
+      if (state->RX < DIR_RIGHT) {
         selectedPidIndex++;
+        joystickCommandHandled = (selectedPidIndex % 3) + 1;
       }
       else if (state->RY > DIR_UP) {
         *pidIndexes[selectedPidIndex % 3] += PID_INCREMENT;
+        joystickCommandHandled = 2;
       }
       else if (state->RY < DIR_DOWN) {
-        *pidIndexes[selectedPidIndex % 3] -= PID_INCREMENT;
+        if (*pidIndexes[selectedPidIndex % 3] > 0) {
+          *pidIndexes[selectedPidIndex % 3] -= PID_INCREMENT;
+          joystickCommandHandled = 1;
+        }
       }
-      joystickCommandHandled = 1;
+    }
+
+    if (state->LZ && state->RX < DIR_LEFT) {
+      configCommandStart = 0;
     }
   }
 }
@@ -164,6 +215,18 @@ int MotorControl::WaitForHoldCommand(unsigned long* start, int holdTime)
   return 0;
 }
 
+void MotorControl::BlinkLed(int blinkTime, int count)
+{
+  int i, state;
+
+  for (i = 0, state = 1; i < count * 2; i++)
+  {
+    digitalWrite(LED_BUILTIN, state);
+    state = !state;
+    delay(blinkTime);
+  }
+}
+
 void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyro)
 {
   float deltaTime = (float)(millis() - lastUpdate) / 1000;
@@ -173,34 +236,11 @@ void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyr
   ComplementaryFilter(accl, gyro, deltaTime);
 
   // 2. use PID controller to control output value for motors
-  // PID-controller has 10 ms delay
   PIDPitch.Compute();
   PIDRoll.Compute();
 
   // 3. calculate new motor speed
   UpdateMotorSpeed();
-
-  // Serial.print(currentPitch);
-  // Serial.print(" : ");
-  // Serial.print(controlPitch);
-  // Serial.print(" : ");
-  // Serial.print(targetPitch);
-  // Serial.print(" , ");
-  //
-  // Serial.print(currentRoll);
-  // Serial.print(" : ");
-  // Serial.print(controlRoll);
-  // Serial.print(" : ");
-  // Serial.print(targetRoll);
-  // Serial.println("");
-
-  // Serial.print(gyro->X);
-  // Serial.print(" : ");
-  // Serial.println(gyro->X * deltaTime);
-  // Serial.print(gyro->Y - 2);
-  // Serial.print(" : ");
-  // Serial.println((gyro->Y - 2) * deltaTime);
-  // Serial.println("");
 
   lastUpdate = millis();
 }
@@ -218,15 +258,16 @@ void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyr
 // BackR = Throttle - Pitch + Yaw
 void MotorControl::UpdateMotorSpeed()
 {
+	// is the controlRoll/pitch values wrong btw?
+	// is it actually degrees (-30...30) scaled to -255...255
+	// it works pretty well during simulation anyway and maybe it is ok to control like this?
   int CWF = targetThrottle - controlPitch - controlRoll; // - Yaw
   int CCWF = targetThrottle - controlPitch + controlRoll; // + Yaw
   int CCWB = targetThrottle + controlPitch + controlRoll;  // + Yaw
   int CWB = targetThrottle + controlPitch - controlRoll;  // - Yaw
 
-  // find largest over limit value
-  // overLimit - limit = x
-  // foreach motor speed - x
-  int max = 255; // -255...255
+  // find largest over limit value -255...255
+  int max = 255;
 
   if (abs(CWF) > max) max = CWF;
   if (abs(CCWF) > max) max = CCWF;
@@ -238,7 +279,6 @@ void MotorControl::UpdateMotorSpeed()
 
   if (abs(overLimit) > 0)
   {
-      //Serial.println(overLimit);
       CWF = Clamp(CWF + overLimit, 0, 255);
       CCWF = Clamp(CCWF + overLimit, 0, 255);
       CCWB = Clamp(CCWB + overLimit, 0, 255);
@@ -267,15 +307,37 @@ void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccw
     cwb.write(180 * (scwb > 0.85 ? 0.85 : scwb));
     ccwf.write(180 * (sccwf > 0.85 ? 0.85 : sccwf));
     ccwb.write(180 * (sccwb > 0.85 ? 0.85 : sccwb));
+
+    Serial.print(currentPitch);
+    Serial.print(" : ");
+    Serial.print(controlPitch);
+    Serial.print(" : ");
+    Serial.print(targetPitch);
+    Serial.print(" , ");
+
+    Serial.print(currentRoll);
+    Serial.print(" : ");
+    Serial.print(controlRoll);
+    Serial.print(" : ");
+    Serial.print(targetRoll);
+    Serial.println("");
+
+    // Serial.print(gyro->X);
+    // Serial.print(" : ");
+    // Serial.println(gyro->X * deltaTime);
+    // Serial.print(gyro->Y - 2);
+    // Serial.print(" : ");
+    // Serial.println((gyro->Y - 2) * deltaTime);
+    // Serial.println("");
   }
 
   // Serial.print(scwf);
-  // Serial.print(" , ");
-  // Serial.println(sccwf);
+  // Serial.print(", ");
+  // Serial.print(sccwf);
+  // Serial.print("; ");
   // Serial.print(scwb);
   // Serial.print(" , ");
   // Serial.println(sccwb);
-  // Serial.println("");
 }
 
 // http://www.pieter-jan.com/node/11
@@ -290,14 +352,12 @@ void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro,
   // if the accelerometer data is within a 0.5-2G, then we will use that data
   int forceMagApprox = abs(accl->X) + abs(accl->Y) + abs(accl->Z);
 
-  if (forceMagApprox > 0.5 && forceMagApprox < 2) {
-    // float pitchAccl = atan2f(accl->Y, sqrt(accl->X * accl->X + accl->Z * accl->Z)) * 57.2957;
-    // float rollAccl = atan2f(-accl->X, accl->Z) * 57.2957;
+  if (forceMagApprox > 0.5 && forceMagApprox < 1.5) {
     float rollAccl = atan2f(accl->Y, accl->Z) * 57.2957;
     float pitchAccl = atan2f(-accl->X, accl->Z) * 57.2957;
 
-    currentPitch = (1 - LOW_PASS_RATIO) * currentPitch + pitchAccl * LOW_PASS_RATIO;
-    currentRoll = (1 - LOW_PASS_RATIO) * currentRoll + rollAccl * LOW_PASS_RATIO;
+    currentPitch = (1 - acclRatio) * currentPitch + pitchAccl * acclRatio;
+    currentRoll = (1 - acclRatio) * currentRoll + rollAccl * acclRatio;
   }
 }
 
