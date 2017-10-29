@@ -9,7 +9,9 @@ unsigned char targetThrottle;
 double Kp, Ki, Kd; // current values
 double dKp, dKi, dKd; // default values
 double* pidIndexes[3];
+
 double acclRatio;
+float gyroOffsetX, gyroOffsetY, gyroOffsetZ;
 
 unsigned long lastUpdate;
 unsigned long flightCommandStart;
@@ -68,13 +70,11 @@ void MotorControl::Init(double kp, double ki, double kd)
   pidIndexes[2] = &Kd;
 
   acclRatio = DEFAULT_ACCL_RATIO;
+  gyroOffsetX = gyroOffsetY = gyroOffsetZ = 0;
 
-  pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
-
   SetMotorSpeed(0,0,0,0);
   delay(3000);
-
   digitalWrite(LED_BUILTIN, LOW);
 
   flightActive = 0;
@@ -258,13 +258,13 @@ void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyr
 // BackR = Throttle - Pitch + Yaw
 void MotorControl::UpdateMotorSpeed()
 {
-	// is the controlRoll/pitch values wrong btw?
-	// is it actually degrees (-30...30) scaled to -255...255
-	// it works pretty well during simulation anyway and maybe it is ok to control like this?
-  int CWF = targetThrottle - controlPitch - controlRoll; // - Yaw
-  int CCWF = targetThrottle - controlPitch + controlRoll; // + Yaw
-  int CCWB = targetThrottle + controlPitch + controlRoll;  // + Yaw
-  int CWB = targetThrottle + controlPitch - controlRoll;  // - Yaw
+  float cp = controlPitch * DAMPEN_PID_OUTPUT;
+  float cr = controlRoll * DAMPEN_PID_OUTPUT;
+
+  int CWF = targetThrottle - cp - cr; // - Yaw
+  int CCWF = targetThrottle - cp + cr; // + Yaw
+  int CCWB = targetThrottle + cp + cr;  // + Yaw
+  int CWB = targetThrottle + cp - cr;  // - Yaw
 
   // find largest over limit value -255...255
   int max = 255;
@@ -307,37 +307,7 @@ void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccw
     cwb.write(180 * (scwb > 0.85 ? 0.85 : scwb));
     ccwf.write(180 * (sccwf > 0.85 ? 0.85 : sccwf));
     ccwb.write(180 * (sccwb > 0.85 ? 0.85 : sccwb));
-
-    Serial.print(currentPitch);
-    Serial.print(" : ");
-    Serial.print(controlPitch);
-    Serial.print(" : ");
-    Serial.print(targetPitch);
-    Serial.print(" , ");
-
-    Serial.print(currentRoll);
-    Serial.print(" : ");
-    Serial.print(controlRoll);
-    Serial.print(" : ");
-    Serial.print(targetRoll);
-    Serial.println("");
-
-    // Serial.print(gyro->X);
-    // Serial.print(" : ");
-    // Serial.println(gyro->X * deltaTime);
-    // Serial.print(gyro->Y - 2);
-    // Serial.print(" : ");
-    // Serial.println((gyro->Y - 2) * deltaTime);
-    // Serial.println("");
   }
-
-  // Serial.print(scwf);
-  // Serial.print(", ");
-  // Serial.print(sccwf);
-  // Serial.print("; ");
-  // Serial.print(scwb);
-  // Serial.print(" , ");
-  // Serial.println(sccwb);
 }
 
 // http://www.pieter-jan.com/node/11
@@ -345,8 +315,8 @@ void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccw
 void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro, float deltaTime)
 {
   // integrate gyro values
-  currentRoll += gyro->X * deltaTime;
-  currentPitch -= (gyro->Y - 2) * deltaTime; // -2 remove bias, maybe add calibration later on?
+  currentRoll += (gyro->X - gyroOffsetX) * deltaTime;
+  currentPitch -= (gyro->Y - gyroOffsetY) * deltaTime;
 
   // compensate drift with accel data, ignore large magnitudes
   // if the accelerometer data is within a 0.5-2G, then we will use that data
@@ -391,6 +361,45 @@ int MotorControl::Clamp(int val, int min, int max)
   return val;
 }
 
+void MotorControl::SetGyroOffset(float x, float y, float z)
+{
+  gyroOffsetX = x;
+  gyroOffsetY = y;
+  gyroOffsetZ = z;
+}
+
+void MotorControl::DebugOrientation()
+{
+  Serial.print(currentPitch);
+  Serial.print(" : ");
+  Serial.print(controlPitch);
+  Serial.print(" : ");
+  Serial.print(targetPitch);
+  Serial.print(" , ");
+
+  Serial.print(currentRoll);
+  Serial.print(" : ");
+  Serial.print(controlRoll);
+  Serial.print(" : ");
+  Serial.print(targetRoll);
+  Serial.println("");
+
+  // Serial.print(cwf.read());
+  // Serial.print(", ");
+  // Serial.print(ccwf.read());
+  // Serial.print("; ");
+  // Serial.print(cwb.read());
+  // Serial.print(" , ");
+  // Serial.println(ccwb.read());
+
+  // Serial.print(gyro->X);
+  // Serial.print(" : ");
+  // Serial.println(gyro->X * deltaTime);
+  // Serial.print(gyro->Y - 2);
+  // Serial.print(" : ");
+  // Serial.println((gyro->Y - 2) * deltaTime);
+  // Serial.println("");
+}
 
 
 // // timer 2 (controls pin 10, 9)

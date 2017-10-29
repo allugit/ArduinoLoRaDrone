@@ -27,6 +27,7 @@ float temp;
 float pressure;
 float altitude;
 
+void calibrateGyroscope();
 void debugIMU(int debugMask);
 void printDeviceId();
 void calculateLoops();
@@ -34,10 +35,11 @@ void calculateLoops();
 void setup() {
   // Serial.begin(9600);
   // while(!Serial);
+  pinMode(LED_BUILTIN, OUTPUT);
 
   comm.Init();
   imu.Init();
-  motorControl.Init(0, 0.02, 0);
+  motorControl.Init(1, 0.02, 0);
 
 	lastReceivedPacket = 0;
   lastLoopUpdate = 0;
@@ -46,6 +48,7 @@ void setup() {
   imu.ReadGyro(&gyro);
   imu.ReadAccel(&accl);
   imu.ReadMagPolar(&polar);
+  calibrateGyroscope();
 }
 
 void loop() {
@@ -80,7 +83,7 @@ void loop() {
     motorControl.CalculateTargetAngles(&accl, &gyro);
   }
 
-  //calculateLoops();
+  calculateLoops();
   // temp = imu.ReadTempC();
   // pressure = imu.ReadPressurehPa();
   // altitude = imu.ConvPresToAltM(pressure);
@@ -91,6 +94,27 @@ void loop() {
   // Serial.println(polar.D);
 }
 
+void calibrateGyroscope()
+{
+  digitalWrite(LED_BUILTIN, HIGH);
+  int i;
+  float x, y, z;
+  x = y = z = 0;
+
+  for (i = 0; i < 10; i++) {
+    imu.ReadGyro(&gyro);
+    x += gyro.X;
+    y += gyro.Y;
+    z += gyro.Z;
+    delay(50);
+  }
+
+  motorControl.SetGyroOffset(x / 10, y / 10, z / 10);
+  // Serial.println(x / 10);
+  // Serial.println(y / 10);
+  // Serial.println(z / 10);
+  digitalWrite(LED_BUILTIN, LOW);
+}
 
 // DEBUG
 void calculateLoops()
@@ -100,6 +124,7 @@ void calculateLoops()
   if (millis() > lastLoopUpdate + 1000)
   {
     Serial.println(loops, DEC);
+    motorControl.DebugOrientation();
     loops = 0;
     lastLoopUpdate = millis();
   }

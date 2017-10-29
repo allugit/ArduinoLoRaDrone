@@ -4,3 +4,4 @@
 .gcc-flags.json
 lib/Communication
 lib/Joystick
+lib/Nav_mod

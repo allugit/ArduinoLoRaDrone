@@ -16,7 +16,7 @@ class MotorControl
   #define MOTOR_CCWB 9
 
   #define JOYSTICK_CENTER 125
-  #define JOYSTICK_THRESHOLD 3
+  #define JOYSTICK_THRESHOLD 5
   #define JOYSTICK_COMMAND_THRESHOLD 100
   #define DIR_DOWN JOYSTICK_CENTER - JOYSTICK_COMMAND_THRESHOLD
   #define DIR_UP JOYSTICK_CENTER + JOYSTICK_COMMAND_THRESHOLD
@@ -26,6 +26,7 @@ class MotorControl
 
   // low pass ratio for ComplementaryFilter
   #define DEFAULT_ACCL_RATIO 0.02
+  #define DAMPEN_PID_OUTPUT 0.2
 
   #define PITCH_LIMIT 30
   #define ROLL_LIMIT 30
@@ -36,6 +37,8 @@ class MotorControl
     void HandleJoystick(JoystickState state);
     void CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyro);
     void SetMotorSpeed(float m1, float m2, float m3, float m4);
+    void SetGyroOffset(float x, float y, float z);
+    void DebugOrientation();
 
 	private:
     void HandleJoystickCommands(JoystickState* state);
