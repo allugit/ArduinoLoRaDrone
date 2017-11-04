@@ -8,7 +8,9 @@ unsigned char targetThrottle;
 // PID tunings: porpotional, integral, derivative
 double Kp, Ki, Kd; // current values
 double dKp, dKi, dKd; // default values
-double* pidIndexes[3];
+double dampenPidOutput;
+double* configIndexes[4];
+unsigned char selectedConfigIndex;
 
 double acclRatio;
 float gyroOffsetX, gyroOffsetY, gyroOffsetZ;
@@ -16,7 +18,6 @@ float gyroOffsetX, gyroOffsetY, gyroOffsetZ;
 unsigned long lastUpdate;
 unsigned long flightCommandStart;
 unsigned long configCommandStart;
-unsigned char selectedPidIndex;
 int joystickCommandHandled;
 
 int flightActive;
@@ -35,8 +36,8 @@ void MotorControl::Init(double kp, double ki, double kd)
   PIDPitch.SetMode(AUTOMATIC);
   PIDRoll.SetMode(AUTOMATIC);
 
-  PIDPitch.SetOutputLimits(-30, 30);
-  PIDRoll.SetOutputLimits(-30, 30);
+  PIDPitch.SetOutputLimits(-180, 180); // 360 degrees
+  PIDRoll.SetOutputLimits(-180, 180);
 
   PIDPitch.SetTunings(kp, ki, kd);
   PIDRoll.SetTunings(kp, ki, kd);
@@ -65,10 +66,12 @@ void MotorControl::Init(double kp, double ki, double kd)
   dKp = Kp = kp;
   dKi = Ki = ki;
   dKd = Kd = kd;
-  pidIndexes[0] = &Kp;
-  pidIndexes[1] = &Ki;
-  pidIndexes[2] = &Kd;
+  configIndexes[0] = &Kp;
+  configIndexes[1] = &Ki;
+  configIndexes[2] = &Kd;
+  configIndexes[3] = &dampenPidOutput;
 
+  dampenPidOutput = 1;
   acclRatio = DEFAULT_ACCL_RATIO;
   gyroOffsetX = gyroOffsetY = gyroOffsetZ = 0;
 
@@ -81,7 +84,7 @@ void MotorControl::Init(double kp, double ki, double kd)
   flightCommandStart = 0;
   configCommandStart = 0;
   joystickCommandHandled = 0;
-  selectedPidIndex = 0;
+  selectedConfigIndex = 0;
   lastUpdate = millis();
 }
 
@@ -105,8 +108,8 @@ void MotorControl::HandleJoystick(JoystickState state)
   // and inputed to PID-controller, output is -255 to 255 which is summed with targetThrottle
   // joystick state is a byte 0-255
   // scale against max pitch and roll
-  targetPitch = state.RY * (PITCH_LIMIT * 2.0f / 255.0f) - PITCH_LIMIT;
-  targetRoll = state.RX * (ROLL_LIMIT * 2.0f / 255.0f) - ROLL_LIMIT;
+  targetPitch = state.RY * (JOYSTICK_PITCH_LIMIT * 2.0f / 255.0f) - JOYSTICK_PITCH_LIMIT;
+  targetRoll = state.RX * (JOYSTICK_ROLL_LIMIT * 2.0f / 255.0f) - JOYSTICK_ROLL_LIMIT;
   if (abs(targetPitch) < 1) targetPitch = 0;
   if (abs(targetRoll) < 1) targetRoll = 0;
 
@@ -141,20 +144,20 @@ void MotorControl::HandleJoystickCommands(JoystickState* state)
       PIDPitch.SetTunings(Kp, Ki, Kd);
       PIDRoll.SetTunings(Kp, Ki, Kd);
 
-      Serial.println(selectedPidIndex % 3);
-      Serial.println(acclRatio);
-      Serial.print(PIDPitch.GetKp());
-      Serial.print(" ");
-      Serial.print(PIDPitch.GetKi());
-      Serial.print(" ");
-      Serial.println(PIDPitch.GetKd());
-      Serial.print(PIDRoll.GetKp());
-      Serial.print(" ");
-      Serial.print(PIDRoll.GetKi());
-      Serial.print(" ");
-      Serial.println(PIDRoll.GetKd());
+      // Serial.println(selectedConfigIndex % 4);
+      // Serial.println(acclRatio);
+      // Serial.print(PIDPitch.GetKp());
+      // Serial.print(" ");
+      // Serial.print(PIDPitch.GetKi());
+      // Serial.print(" ");
+      // Serial.println(PIDPitch.GetKd());
+      // Serial.print(PIDRoll.GetKp());
+      // Serial.print(" ");
+      // Serial.print(PIDRoll.GetKi());
+      // Serial.print(" ");
+      // Serial.println(PIDRoll.GetKd());
 
-      if (joystickCommandHandled == 5) {
+      if (joystickCommandHandled == 6) {
         BlinkLed(3000, 1);
       }
       else {
@@ -167,30 +170,37 @@ void MotorControl::HandleJoystickCommands(JoystickState* state)
   else {
     if (!state->LZ) {
       if (WaitForHoldCommand(&configCommandStart, 2000)) {
+        // acclRatio = 0 ignores accelerometer data
         acclRatio = acclRatio == DEFAULT_ACCL_RATIO ? 0 : DEFAULT_ACCL_RATIO;
         currentRoll = 0;
         currentPitch = 0;
-        joystickCommandHandled = 4;
+        joystickCommandHandled = 5;
       }
     }
     else if (state->RX > DIR_LEFT) {
       if (WaitForHoldCommand(&configCommandStart, 2000)) {
         Kp = dKp; Ki = dKi; Kd = dKd;
-        joystickCommandHandled = 5;
+        dampenPidOutput = 1;
+        acclRatio = DEFAULT_ACCL_RATIO;
+        currentRoll = 0;
+        currentPitch = 0;
+        joystickCommandHandled = 6;
       }
     }
     else {
       if (state->RX < DIR_RIGHT) {
-        selectedPidIndex++;
-        joystickCommandHandled = (selectedPidIndex % 3) + 1;
+        selectedConfigIndex++;
+        joystickCommandHandled = (selectedConfigIndex % 4) + 1;
       }
       else if (state->RY > DIR_UP) {
-        *pidIndexes[selectedPidIndex % 3] += PID_INCREMENT;
+        double increment = selectedConfigIndex % 4 == 3 ? PID_DAMPEN_INCREMENT : PID_INCREMENT;
+        *configIndexes[selectedConfigIndex % 4] += increment;
         joystickCommandHandled = 2;
       }
       else if (state->RY < DIR_DOWN) {
-        if (*pidIndexes[selectedPidIndex % 3] > 0) {
-          *pidIndexes[selectedPidIndex % 3] -= PID_INCREMENT;
+        if (*configIndexes[selectedConfigIndex % 4] > 0) {
+          double increment = selectedConfigIndex % 4 == 3 ? PID_DAMPEN_INCREMENT : PID_INCREMENT;
+          *configIndexes[selectedConfigIndex % 4] -= increment;
           joystickCommandHandled = 1;
         }
       }
@@ -258,13 +268,13 @@ void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyr
 // BackR = Throttle - Pitch + Yaw
 void MotorControl::UpdateMotorSpeed()
 {
-  float cp = controlPitch * DAMPEN_PID_OUTPUT;
-  float cr = controlRoll * DAMPEN_PID_OUTPUT;
+  float cp = controlPitch * dampenPidOutput;
+  float cr = controlRoll * dampenPidOutput;
 
-  int CWF = targetThrottle - cp - cr; // - Yaw
-  int CCWF = targetThrottle - cp + cr; // + Yaw
-  int CCWB = targetThrottle + cp + cr;  // + Yaw
-  int CWB = targetThrottle + cp - cr;  // - Yaw
+  int CWF = targetThrottle + cp + cr; // - Yaw
+  int CCWF = targetThrottle + cp - cr; // + Yaw
+  int CCWB = targetThrottle - cp - cr;  // + Yaw
+  int CWB = targetThrottle - cp + cr;  // - Yaw
 
   // find largest over limit value -255...255
   int max = 255;
@@ -338,21 +348,6 @@ void MotorControl::AcclAngle(struct ACCL_T *accl)
   currentRoll = atan2f(-accl->X, accl->Z) * 57.2957;
 }
 
-void MotorControl::LimitAngles(double *pitch, double *roll)
-{
-  if (abs(*pitch) > PITCH_LIMIT)
-  {
-    int sign = *pitch < 0 ? -1 : 1;
-    *pitch = PITCH_LIMIT * sign;
-  }
-
-  if (abs(*roll) > ROLL_LIMIT)
-  {
-    int sign = *roll < 0 ? -1 : 1;
-    currentRoll = ROLL_LIMIT * sign;
-  }
-}
-
 // minor detail: with pointers it is faster because value does not need to be copied
 int MotorControl::Clamp(int val, int min, int max)
 {
@@ -370,27 +365,27 @@ void MotorControl::SetGyroOffset(float x, float y, float z)
 
 void MotorControl::DebugOrientation()
 {
-  Serial.print(currentPitch);
-  Serial.print(" : ");
-  Serial.print(controlPitch);
-  Serial.print(" : ");
-  Serial.print(targetPitch);
-  Serial.print(" , ");
-
-  Serial.print(currentRoll);
-  Serial.print(" : ");
-  Serial.print(controlRoll);
-  Serial.print(" : ");
-  Serial.print(targetRoll);
-  Serial.println("");
-
-  // Serial.print(cwf.read());
-  // Serial.print(", ");
-  // Serial.print(ccwf.read());
-  // Serial.print("; ");
-  // Serial.print(cwb.read());
+  // Serial.print(currentPitch);
+  // Serial.print(" : ");
+  // Serial.print(controlPitch);
+  // Serial.print(" : ");
+  // Serial.print(targetPitch);
   // Serial.print(" , ");
-  // Serial.println(ccwb.read());
+  //
+  // Serial.print(currentRoll);
+  // Serial.print(" : ");
+  // Serial.print(controlRoll);
+  // Serial.print(" : ");
+  // Serial.print(targetRoll);
+  // Serial.println("");
+
+  Serial.print(cwf.read());
+  Serial.print(", ");
+  Serial.print(ccwf.read());
+  Serial.print("; ");
+  Serial.print(cwb.read());
+  Serial.print(" , ");
+  Serial.println(ccwb.read());
 
   // Serial.print(gyro->X);
   // Serial.print(" : ");

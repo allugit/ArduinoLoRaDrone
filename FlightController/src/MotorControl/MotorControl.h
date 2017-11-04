@@ -23,13 +23,13 @@ class MotorControl
   #define DIR_LEFT JOYSTICK_CENTER + JOYSTICK_COMMAND_THRESHOLD
   #define DIR_RIGHT JOYSTICK_CENTER - JOYSTICK_COMMAND_THRESHOLD
   #define PID_INCREMENT 0.5
+  #define PID_DAMPEN_INCREMENT 0.1
 
   // low pass ratio for ComplementaryFilter
   #define DEFAULT_ACCL_RATIO 0.02
-  #define DAMPEN_PID_OUTPUT 0.2
 
-  #define PITCH_LIMIT 30
-  #define ROLL_LIMIT 30
+  #define JOYSTICK_PITCH_LIMIT 10
+  #define JOYSTICK_ROLL_LIMIT 10
   #define YAW_LIMIT 20
 
 	public:
@@ -46,7 +46,6 @@ class MotorControl
     int WaitForHoldCommand(unsigned long* start, int holdTime);
     void ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro, float deltaTime);
     void AcclAngle(struct ACCL_T *accl);
-    void LimitAngles(double *pitch, double *roll);
     void UpdateMotorSpeed();
     int Clamp(int val, int min, int max);
 };

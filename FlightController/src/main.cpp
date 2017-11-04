@@ -39,7 +39,7 @@ void setup() {
 
   comm.Init();
   imu.Init();
-  motorControl.Init(1, 0.02, 0);
+  motorControl.Init(1, 0, 0);
 
 	lastReceivedPacket = 0;
   lastLoopUpdate = 0;
@@ -47,7 +47,6 @@ void setup() {
 
   imu.ReadGyro(&gyro);
   imu.ReadAccel(&accl);
-  imu.ReadMagPolar(&polar);
   calibrateGyroscope();
 }
 
@@ -57,7 +56,6 @@ void loop() {
 
   imu.ReadGyro(&gyro);
   imu.ReadAccel(&accl);
-  imu.ReadMagPolar(&polar);
 
   if (packet != NULL) {
     JoystickState state = {
@@ -72,7 +70,7 @@ void loop() {
   free(packet);
 
   // no lora packet received for a while, go into safety landing
-  if (ms > lastReceivedPacket + 15000) {
+  if (ms > lastReceivedPacket + 2000) {
     motorControl.SetMotorSpeed(0, 0, 0, 0);
   }
   else if (ms > lastReceivedPacket + 400) {
@@ -83,15 +81,12 @@ void loop() {
     motorControl.CalculateTargetAngles(&accl, &gyro);
   }
 
-  calculateLoops();
+  // calculateLoops();
   // temp = imu.ReadTempC();
   // pressure = imu.ReadPressurehPa();
   // altitude = imu.ConvPresToAltM(pressure);
   //debugIMU(DEBUG_GYRO | DEBUG_ACCL);
   //printDeviceId();
-  // Serial.print(polar.R);
-  // Serial.print(" ");
-  // Serial.println(polar.D);
 }
 
 void calibrateGyroscope()
@@ -127,6 +122,11 @@ void calculateLoops()
     motorControl.DebugOrientation();
     loops = 0;
     lastLoopUpdate = millis();
+
+    // imu.ReadMagPolar(&polar);
+    // Serial.print(polar.R);
+    // Serial.print(" ");
+    // Serial.println(polar.D);
   }
 }
 

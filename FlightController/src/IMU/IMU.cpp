@@ -2,6 +2,8 @@
 
 static SPISettings spiSettings(CLK_SPEED, MSBFIRST, SPI_MODE0);
 struct MAGNO_T mag;
+int16_t magMin[3] = {0, 0, 0};
+int16_t magMax[3] = {0, 0, 0};
 
 void IMU::Init()
 {
@@ -28,6 +30,24 @@ void IMU::Init()
   m_GaussRangeLSB = GetMAGRangeLSB(PAR_MAG_4GAUSS);
   //reference pressure corresponding to sea level
   Pref = 1013.25;
+
+  int16_t mBiasRaw[3];
+  float mBias[3];
+  int j;
+
+  for (j = 0; j < 3; j++)
+  {
+    MagOffset(j, 0);
+  }
+
+  CalibrateMag(1);
+
+  for (j = 0; j < 3; j++)
+  {
+    mBiasRaw[j] = (magMax[j] + magMin[j]) / 2;
+    mBias[j] = ConvertReadingToValueGauss(mBiasRaw[j]);
+    MagOffset(j, mBiasRaw[j]);
+  }
 }
 
 void IMU::GetDeviceID(struct DEV_ID *id)
@@ -98,23 +118,6 @@ void IMU::ReadAccel(struct ACCL_T *accl)
 	accl->Z = (float)rawAclZ * m_GRangeLSB;
 }
 
-/* ------------------------------------------------------------ */
-/*  Nav::ReadMagGauss(float &MagXGauss, float &MagYGauss, float &MagZGauss)
-**
-**  Parameters:
-**		&MagXGauss	- the output parameter that will receive magnetic value on X axis (in "Gauss")
-**		&MagYGauss	- the output parameter that will receive magnetic value on Y axis (in "Gauss")
-**		&MagZGauss	- the output parameter that will receive magnetic value on Z axis (in "Gauss")
-**
-**  Return Values:
-**      none
-**
-**  Errors:
-**		none
-**  Description:
-**		This function is the main function used for magnetic field values reading, providing the 3 current magnetometer values in “Gauss”.
-**		For each of the three values, converts the 16-bit raw value to the value expressed in “Gauss”, considering the currently selected Gauss range.
-*/
 void IMU::ReadMagPolar(struct POLAR_T *polar)
 {
 	int16_t MagX, MagY, MagZ;
@@ -345,7 +348,6 @@ void IMU::InitMAG(bool fInit)
 */
 void IMU::InitALT(bool fInit)
 {
-	uint8_t status;
 	if (fInit)
 	{
 		//clean start
@@ -705,4 +707,44 @@ void IMU::SetBitsInRegister(uint8_t bInst, uint8_t bRegAddr, uint8_t bMask, uint
 	// combine the value with the masked register value
 	bRegValue |= (shiftedValue & bMask);
 	WriteRegister(bInst, bRegAddr, 1, &bRegValue);
+}
+
+void IMU::CalibrateMag(bool loadIn)
+{
+  int j;
+  int16_t MagX, MagY, MagZ;
+
+  while (!(DataAvailableMAG(X_AXIS) && DataAvailableMAG(Y_AXIS) && DataAvailableMAG(Z_AXIS)));
+
+  ReadMag(MagX, MagY, MagZ);
+  int16_t magTemp[3] = {0, 0, 0};
+
+  magTemp[0] = MagX;
+  magTemp[1] = MagY;
+  magTemp[2] = MagZ;
+
+  for (j = 0; j < 3; j++)
+  {
+    if (magTemp[j] > magMax[j]) magMax[j] = magTemp[j];
+    if (magTemp[j] < magMin[j]) magMin[j] = magTemp[j];
+  }
+}
+
+void IMU::MagOffset(uint8_t axis, int16_t offset)
+{
+  if (axis > 2)
+    return;
+
+  uint8_t msb, lsb;
+  msb = (offset & 0xFF00) >> 8;
+  lsb = offset & 0x00FF;
+  WriteSPI(INST_MAG, OFFSET_X_REG_L_M + (2 * axis), lsb);
+  WriteSPI(INST_MAG, OFFSET_X_REG_H_M + (2 * axis), msb);
+}
+
+uint8_t IMU::DataAvailableMAG(uint8_t axis)
+{
+	uint8_t status;
+	ReadRegister(INST_MAG, STATUS_REG_M, 1, &status);
+	return ((status & (1<<axis)) >> axis);
 }

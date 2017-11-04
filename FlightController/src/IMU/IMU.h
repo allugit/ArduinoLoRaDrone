@@ -316,6 +316,9 @@ class IMU
     void SetRangeMAG(uint8_t bRangeMAG);
     uint8_t GetRangeMAG();
 
+    void CalibrateMag(bool loadIn);
+    void MagOffset(uint8_t axis, int16_t offset);
+    uint8_t DataAvailableMAG(uint8_t axis);
     void ReadMag(int16_t &MagX, int16_t &MagY, int16_t &MagZ);
     float ConvertReadingToValueGauss(int16_t rawVal);
     void ConvMagToPolar(struct MAGNO_T *mag, struct POLAR_T *polar);
