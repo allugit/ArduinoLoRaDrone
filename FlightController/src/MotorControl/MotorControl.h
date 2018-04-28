@@ -12,9 +12,9 @@
 class MotorControl
 {
   #define MOTOR_CWF 2
-  #define MOTOR_CWB 0
+  #define MOTOR_CWB 3
   #define MOTOR_CCWF 1
-  #define MOTOR_CCWB 3
+  #define MOTOR_CCWB 0
 
   #define JOYSTICK_CENTER 125
   #define JOYSTICK_THRESHOLD 5

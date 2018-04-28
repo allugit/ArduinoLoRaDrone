@@ -71,7 +71,7 @@ void MotorControl::Init(double kp, double ki, double kd)
   configIndexes[2] = &Kd;
   configIndexes[3] = &dampenPidOutput;
 
-  dampenPidOutput = 1;
+  dampenPidOutput = 0.5f;
   acclRatio = DEFAULT_ACCL_RATIO;
   gyroOffsetX = gyroOffsetY = gyroOffsetZ = 0;
 
@@ -201,7 +201,7 @@ void MotorControl::PollCommand(JoystickState* state)
   else if (state->RX > DIR_LEFT) {
     if (WaitForHoldCommand(&configCommandStart, 2000)) {
       Kp = dKp; Ki = dKi; Kd = dKd;
-      dampenPidOutput = 1;
+      dampenPidOutput = 0.5f;
       acclRatio = DEFAULT_ACCL_RATIO;
       currentRoll = 0;
       currentPitch = 0;
@@ -292,39 +292,42 @@ void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyr
 // BackR = Throttle - Pitch + Yaw
 void MotorControl::UpdateMotorSpeed()
 {
-  float cp = controlPitch * dampenPidOutput;
-  float cr = controlRoll * dampenPidOutput;
-
-  int cwf = targetThrottle + cp + cr; // - Yaw
-  int ccwf = targetThrottle + cp - cr; // + Yaw
-  int ccwb = targetThrottle - cp - cr;  // + Yaw
-  int cwb = targetThrottle - cp + cr;  // - Yaw
-
-  // find largest over limit value -255...255
-  int max = 255;
-
-  if (abs(cwf) > max) max = cwf;
-  if (abs(ccwf) > max) max = ccwf;
-  if (abs(ccwb) > max) max = ccwb;
-  if (abs(cwb) > max) max = cwb;
-
-  int overLimit = abs(max) - 255;
-  overLimit = max < 0 ? overLimit : -overLimit;
-
-  if (abs(overLimit) > 0)
-  {
-      cwf = Clamp(cwf + overLimit, 0, 255);
-      ccwf = Clamp(ccwf + overLimit, 0, 255);
-      ccwb = Clamp(ccwb + overLimit, 0, 255);
-      cwb = Clamp(cwb + overLimit, 0, 255);
-  }
-
   unsigned long now = millis();
 
   // this practically does nothing because PWM period is 1ms and flight controller loop is a lot slower than that
   if (now > nextPwmSetTime) {
-    //SetMotorSpeed(cwf / 255.0f, cwb / 255.0f, ccwf / 255.0f, ccwb / 255.0f);
-    SetMotorSpeed(targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f);
+    float cp = controlPitch * dampenPidOutput;
+    float cr = controlRoll * dampenPidOutput;
+
+    int cwf = targetThrottle + cp + cr; // - Yaw
+    int ccwf = targetThrottle + cp - cr; // + Yaw
+    int ccwb = targetThrottle - cp - cr;  // + Yaw
+    int cwb = targetThrottle - cp + cr;  // - Yaw
+
+    int max = 255;
+
+    if (cwf > max) max = cwf;
+    if (ccwf > max) max = ccwf;
+    if (ccwb > max) max = ccwb;
+    if (cwb > max) max = cwb;
+
+    int overLimit = max - 255;
+
+    if (overLimit > 0)
+    {
+        cwf -= overLimit;
+        ccwf -= overLimit;
+        ccwb -= overLimit;
+        cwb -= overLimit;
+    }
+
+    cwf = Clamp(cwf, 0, 255);
+    ccwf = Clamp(ccwf, 0, 255);
+    ccwb = Clamp(ccwb, 0, 255);
+    cwb = Clamp(cwb, 0, 255);
+
+    SetMotorSpeed(cwf / 255.0f, cwb / 255.0f, ccwf / 255.0f, ccwb / 255.0f);
+    //SetMotorSpeed(targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f);
     nextPwmSetTime = now + PWM_PERIOD_MS;
   }
 }
