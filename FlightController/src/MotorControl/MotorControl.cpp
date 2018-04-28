@@ -16,16 +16,19 @@ double acclRatio;
 float gyroOffsetX, gyroOffsetY, gyroOffsetZ;
 
 unsigned long lastUpdate;
+unsigned long nextPwmSetTime;
 unsigned long flightCommandStart;
 unsigned long configCommandStart;
-int joystickCommandHandled;
+int joystickCommandReceived;
 
 int flightActive;
+int joystickConnected;
 
-Servo cwf;
+/*Servo cwf;
 Servo cwb;
 Servo ccwf;
-Servo ccwb;
+Servo ccwb;*/
+Adafruit_PWMServoDriver pwm;
 
 // input, output, setpoint, pid tunings (kp, ki, kd)
 PID PIDPitch(&currentPitch, &controlPitch, &targetPitch, 0, 0, 0, DIRECT);
@@ -47,18 +50,15 @@ void MotorControl::Init(double kp, double ki, double kd)
   PIDPitch.SetSampleTime(5);
   PIDRoll.SetSampleTime(5);
 
-  // attach motor pins to servo object
-  cwf.attach(MOTOR_CWF);
-  cwb.attach(MOTOR_CWB);
-  ccwf.attach(MOTOR_CCWF);
-  ccwb.attach(MOTOR_CCWB);
+  pwm.begin();
+  pwm.setPWMFreq(PWM_FREQ);
 
   currentPitch = 0;
   currentRoll = 0;
   controlPitch = 0;
   controlRoll = 0;
 
-  targetThrottle = 255;
+  targetThrottle = 0;
   targetPitch = 0;
   targetRoll = 0;
 
@@ -76,14 +76,16 @@ void MotorControl::Init(double kp, double ki, double kd)
   gyroOffsetX = gyroOffsetY = gyroOffsetZ = 0;
 
   digitalWrite(LED_BUILTIN, HIGH);
-  SetMotorSpeed(0,0,0,0);
+  SetMotorSpeed(0, 0, 0, 0);
   delay(3000);
   digitalWrite(LED_BUILTIN, LOW);
 
   flightActive = 0;
+  joystickConnected = 0;
+  nextPwmSetTime = 0;
   flightCommandStart = 0;
   configCommandStart = 0;
-  joystickCommandHandled = 0;
+  joystickCommandReceived = 0;
   selectedConfigIndex = 0;
   lastUpdate = millis();
 }
@@ -100,8 +102,14 @@ Throttle – To increase,  push the left stick forwards. To decrease, pull the l
 */
 void MotorControl::HandleJoystick(JoystickState state)
 {
+  joystickConnected = 1;
+
   // throttle is controlled directly
   targetThrottle = state.LY;
+
+   if (targetThrottle < JOYSTICK_MIN_THROTTLE) {
+     targetThrottle = 0;
+   }
 
   // calculate pitch and roll direction
   // pitch and roll are calculated as +/- degrees of copter angle (because they're returned like that from IMU)
@@ -125,7 +133,7 @@ void MotorControl::HandleJoystick(JoystickState state)
 
   if (!flightActive) {
     // activate motors only when user throttle minimum
-    if (targetThrottle < 15) {
+    if (targetThrottle < JOYSTICK_MIN_THROTTLE) {
       flightActive = 1;
     }
     else {
@@ -136,79 +144,95 @@ void MotorControl::HandleJoystick(JoystickState state)
 
 void MotorControl::HandleJoystickCommands(JoystickState* state)
 {
-  if (joystickCommandHandled) {
-    int xCenter = state->RX < DIR_LEFT && state->RX > DIR_RIGHT;
-    int yCenter = state->RY > DIR_DOWN && state->RY < DIR_UP;
+  if (joystickCommandReceived) {
+    HandleCommand(state);
+  }
+  else {
+    PollCommand(state);
+  }
+}
 
-    if (xCenter && yCenter) {
-      PIDPitch.SetTunings(Kp, Ki, Kd);
-      PIDRoll.SetTunings(Kp, Ki, Kd);
+void MotorControl::HandleCommand(JoystickState* state)
+{
+  int xCenter = state->RX < DIR_LEFT && state->RX > DIR_RIGHT;
+  int yCenter = state->RY > DIR_DOWN && state->RY < DIR_UP;
 
-      // Serial.println(selectedConfigIndex % 4);
-      // Serial.println(acclRatio);
-      // Serial.print(PIDPitch.GetKp());
-      // Serial.print(" ");
-      // Serial.print(PIDPitch.GetKi());
-      // Serial.print(" ");
-      // Serial.println(PIDPitch.GetKd());
-      // Serial.print(PIDRoll.GetKp());
-      // Serial.print(" ");
-      // Serial.print(PIDRoll.GetKi());
-      // Serial.print(" ");
-      // Serial.println(PIDRoll.GetKd());
+  if (xCenter && yCenter) {
+    PIDPitch.SetTunings(Kp, Ki, Kd);
+    PIDRoll.SetTunings(Kp, Ki, Kd);
 
-      if (joystickCommandHandled == 6) {
-        BlinkLed(3000, 1);
-      }
-      else {
-        BlinkLed(250, joystickCommandHandled);
-      }
+    // Serial.println(selectedConfigIndex % 4);
+    // Serial.println(acclRatio);
+    // Serial.print(PIDPitch.GetKp());
+    // Serial.print(" ");
+    // Serial.print(PIDPitch.GetKi());
+    // Serial.print(" ");
+    // Serial.println(PIDPitch.GetKd());
+    // Serial.print(PIDRoll.GetKp());
+    // Serial.print(" ");
+    // Serial.print(PIDRoll.GetKi());
+    // Serial.print(" ");
+    // Serial.println(PIDRoll.GetKd());
 
-      joystickCommandHandled = 0;
+    if (joystickCommandReceived == 6) {
+      BlinkLed(3000, 1);
+    }
+    else {
+      BlinkLed(250, joystickCommandReceived);
+    }
+
+    joystickCommandReceived = 0;
+  }
+}
+
+void MotorControl::PollCommand(JoystickState* state)
+{
+  if (!state->LZ) {
+    // accelerometer on/off
+    if (WaitForHoldCommand(&configCommandStart, 2000)) {
+      // acclRatio = 0 ignores accelerometer data
+      acclRatio = acclRatio == DEFAULT_ACCL_RATIO ? 0 : DEFAULT_ACCL_RATIO;
+      currentRoll = 0;
+      currentPitch = 0;
+      joystickCommandReceived = 5;
+    }
+  }
+  // reset values to default
+  else if (state->RX > DIR_LEFT) {
+    if (WaitForHoldCommand(&configCommandStart, 2000)) {
+      Kp = dKp; Ki = dKi; Kd = dKd;
+      dampenPidOutput = 1;
+      acclRatio = DEFAULT_ACCL_RATIO;
+      currentRoll = 0;
+      currentPitch = 0;
+      joystickCommandReceived = 6;
     }
   }
   else {
-    if (!state->LZ) {
-      if (WaitForHoldCommand(&configCommandStart, 2000)) {
-        // acclRatio = 0 ignores accelerometer data
-        acclRatio = acclRatio == DEFAULT_ACCL_RATIO ? 0 : DEFAULT_ACCL_RATIO;
-        currentRoll = 0;
-        currentPitch = 0;
-        joystickCommandHandled = 5;
-      }
+    // change config value
+    if (state->RX < DIR_RIGHT) {
+      selectedConfigIndex++;
+      joystickCommandReceived = (selectedConfigIndex % 4) + 1;
     }
-    else if (state->RX > DIR_LEFT) {
-      if (WaitForHoldCommand(&configCommandStart, 2000)) {
-        Kp = dKp; Ki = dKi; Kd = dKd;
-        dampenPidOutput = 1;
-        acclRatio = DEFAULT_ACCL_RATIO;
-        currentRoll = 0;
-        currentPitch = 0;
-        joystickCommandHandled = 6;
-      }
+    // increment config value
+    else if (state->RY > DIR_UP) {
+      double increment = selectedConfigIndex % 4 == 3 ? PID_DAMPEN_INCREMENT : PID_INCREMENT;
+      *configIndexes[selectedConfigIndex % 4] += increment;
+      joystickCommandReceived = 2;
     }
-    else {
-      if (state->RX < DIR_RIGHT) {
-        selectedConfigIndex++;
-        joystickCommandHandled = (selectedConfigIndex % 4) + 1;
-      }
-      else if (state->RY > DIR_UP) {
+    // decrement config value
+    else if (state->RY < DIR_DOWN) {
+      if (*configIndexes[selectedConfigIndex % 4] > 0) {
         double increment = selectedConfigIndex % 4 == 3 ? PID_DAMPEN_INCREMENT : PID_INCREMENT;
-        *configIndexes[selectedConfigIndex % 4] += increment;
-        joystickCommandHandled = 2;
-      }
-      else if (state->RY < DIR_DOWN) {
-        if (*configIndexes[selectedConfigIndex % 4] > 0) {
-          double increment = selectedConfigIndex % 4 == 3 ? PID_DAMPEN_INCREMENT : PID_INCREMENT;
-          *configIndexes[selectedConfigIndex % 4] -= increment;
-          joystickCommandHandled = 1;
-        }
+        *configIndexes[selectedConfigIndex % 4] -= increment;
+        joystickCommandReceived = 1;
       }
     }
+  }
 
-    if (state->LZ && state->RX < DIR_LEFT) {
-      configCommandStart = 0;
-    }
+  // cancel command?
+  if (state->LZ && state->RX < DIR_LEFT) {
+    configCommandStart = 0;
   }
 }
 
@@ -271,53 +295,55 @@ void MotorControl::UpdateMotorSpeed()
   float cp = controlPitch * dampenPidOutput;
   float cr = controlRoll * dampenPidOutput;
 
-  int CWF = targetThrottle + cp + cr; // - Yaw
-  int CCWF = targetThrottle + cp - cr; // + Yaw
-  int CCWB = targetThrottle - cp - cr;  // + Yaw
-  int CWB = targetThrottle - cp + cr;  // - Yaw
+  int cwf = targetThrottle + cp + cr; // - Yaw
+  int ccwf = targetThrottle + cp - cr; // + Yaw
+  int ccwb = targetThrottle - cp - cr;  // + Yaw
+  int cwb = targetThrottle - cp + cr;  // - Yaw
 
   // find largest over limit value -255...255
   int max = 255;
 
-  if (abs(CWF) > max) max = CWF;
-  if (abs(CCWF) > max) max = CCWF;
-  if (abs(CCWB) > max) max = CCWB;
-  if (abs(CWB) > max) max = CWB;
+  if (abs(cwf) > max) max = cwf;
+  if (abs(ccwf) > max) max = ccwf;
+  if (abs(ccwb) > max) max = ccwb;
+  if (abs(cwb) > max) max = cwb;
 
   int overLimit = abs(max) - 255;
   overLimit = max < 0 ? overLimit : -overLimit;
 
   if (abs(overLimit) > 0)
   {
-      CWF = Clamp(CWF + overLimit, 0, 255);
-      CCWF = Clamp(CCWF + overLimit, 0, 255);
-      CCWB = Clamp(CCWB + overLimit, 0, 255);
-      CWB = Clamp(CWB + overLimit, 0, 255);
+      cwf = Clamp(cwf + overLimit, 0, 255);
+      ccwf = Clamp(ccwf + overLimit, 0, 255);
+      ccwb = Clamp(ccwb + overLimit, 0, 255);
+      cwb = Clamp(cwb + overLimit, 0, 255);
   }
 
-  SetMotorSpeed(CWF / 255.0f, CWB / 255.0f, CCWF / 255.0f, CCWB / 255.0f);
-  //SetMotorSpeed(targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f);
+  unsigned long now = millis();
+
+  // this practically does nothing because PWM period is 1ms and flight controller loop is a lot slower than that
+  if (now > nextPwmSetTime) {
+    //SetMotorSpeed(cwf / 255.0f, cwb / 255.0f, ccwf / 255.0f, ccwb / 255.0f);
+    SetMotorSpeed(targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f);
+    nextPwmSetTime = now + PWM_PERIOD_MS;
+  }
 }
 
 void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccwb)
 {
   if (!flightActive) {
-    cwf.write(0);
-    cwb.write(0);
-    ccwf.write(0);
-    ccwb.write(0);
+    pwm.setPWM(MOTOR_CWF, 0, 4096);
+    pwm.setPWM(MOTOR_CWB, 0, 4096);
+    pwm.setPWM(MOTOR_CCWF, 0, 4096);
+    pwm.setPWM(MOTOR_CCWB, 0, 4096);
   }
-  else {
-    // most RC transmitters put out a smaller range of around 1.2~1.8 ms
-    // 180 = 2 ms and motors will shutdown
-    // should scale throttle value to allow using the whole range of joystick,
-    // but quick fix for now
-    // 1.8 / 2 = 0.9 but still shuts down
-    cwf.write(180 * (scwf > 0.85 ? 0.85 : scwf));
-    cwb.write(180 * (scwb > 0.85 ? 0.85 : scwb));
-    ccwf.write(180 * (sccwf > 0.85 ? 0.85 : sccwf));
-    ccwb.write(180 * (sccwb > 0.85 ? 0.85 : sccwb));
-  }
+  else
+  {
+    pwm.setPWM(MOTOR_CWF, 0, 4096 * scwf);
+    pwm.setPWM(MOTOR_CWB, 0, 4096 * scwb);
+    pwm.setPWM(MOTOR_CCWF, 0, 4096 * sccwf);
+    pwm.setPWM(MOTOR_CCWB, 0, 4096 * sccwb);
+   }
 }
 
 // http://www.pieter-jan.com/node/11
@@ -379,13 +405,15 @@ void MotorControl::DebugOrientation()
   // Serial.print(targetRoll);
   // Serial.println("");
 
-  Serial.print(cwf.read());
-  Serial.print(", ");
-  Serial.print(ccwf.read());
-  Serial.print("; ");
-  Serial.print(cwb.read());
-  Serial.print(" , ");
-  Serial.println(ccwb.read());
+  // Serial.print(cwf.read());
+  // Serial.print(", ");
+  // Serial.print(ccwf.read());
+  // Serial.print("; ");
+  // Serial.print(cwb.read());
+  // Serial.print(" , ");
+  // Serial.println(ccwb.read());
+
+  Serial.println(flightActive);
 
   // Serial.print(gyro->X);
   // Serial.print(" : ");
@@ -395,40 +423,3 @@ void MotorControl::DebugOrientation()
   // Serial.println((gyro->Y - 2) * deltaTime);
   // Serial.println("");
 }
-
-
-// // timer 2 (controls pin 10, 9)
-// pinMode(MOTOR_CW1, OUTPUT);
-// pinMode(MOTOR_CW2, OUTPUT);
-//
-// // timer 1 (controls pin 12, 11)
-// pinMode(MOTOR_CCW1, OUTPUT);
-// pinMode(MOTOR_CCW2, OUTPUT);
-//
-// // analog joystick pins
-// pinMode(JOYSTICK_LZ, INPUT);
-// pinMode(JOYSTICK_LY, INPUT);
-// pinMode(JOYSTICK_LX, INPUT);
-//
-// // Timer/counter control register 1 and 2
-// // Fast PWM, Clear OC2A on Compare Match, set OC2A at BOTTOM (non-inverting mode)
-// TCCR1A = _BV(COM1A1) | _BV(COM1B1) | _BV(WGM12) | _BV(WGM10);
-// TCCR2A = _BV(COM2A1) | _BV(COM2B1) | _BV(WGM21) | _BV(WGM20);
-//
-// // // 100 => 16 Mhz / 64 / 256 = 976 Hz
-// // // 111 => 16 Mhz / 1024 / 256 = 61 Hz
-// // // TCCR2 and other TCCR's are different, maybe should not use TCCR2
-// // // TCCR2B = _BV(CS22) | _BV(CS21) | _BV(20);
-// // TCCR2B = _BV(CS22);
-// // TCCR1B = _BV(CS11) | _BV(CS10);
-//
-// // 16 Mhz / 1024 / 256 = 61 Hz
-// TCCR2B = _BV(CS22) | _BV(CS21) | _BV(CS20);
-// TCCR1B = _BV(CS12);
-
-// 8 bit output compare register A and B
-// (val+1) / 256 = duty cycle (%);
-// OCR1A = (byte)(m1 * 256);
-// OCR1B = (byte)(m2 * 256);
-// OCR2A = (byte)(m3 * 256);
-// OCR2B = (byte)(m4 * 256);

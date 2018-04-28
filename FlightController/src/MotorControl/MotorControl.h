@@ -4,16 +4,17 @@
 #include <Arduino.h>
 #include <Servo.h>
 #include <PID_v1.h>
+#include <Adafruit_PWMServoDriver.h>
 
 #include <Joystick.h>
 #include "IMU/IMU.h"
 
 class MotorControl
 {
-  #define MOTOR_CWF 10
-  #define MOTOR_CWB 11
-  #define MOTOR_CCWF 12
-  #define MOTOR_CCWB 9
+  #define MOTOR_CWF 2
+  #define MOTOR_CWB 0
+  #define MOTOR_CCWF 1
+  #define MOTOR_CCWB 3
 
   #define JOYSTICK_CENTER 125
   #define JOYSTICK_THRESHOLD 5
@@ -28,9 +29,13 @@ class MotorControl
   // low pass ratio for ComplementaryFilter
   #define DEFAULT_ACCL_RATIO 0.02
 
+  #define JOYSTICK_MIN_THROTTLE 16
   #define JOYSTICK_PITCH_LIMIT 10
   #define JOYSTICK_ROLL_LIMIT 10
   #define YAW_LIMIT 20
+
+  #define PWM_FREQ 1000
+  #define PWM_PERIOD_MS (1.0f / PWM_FREQ * 1000)
 
 	public:
 		void Init(double kp, double ki, double kd);
@@ -48,6 +53,8 @@ class MotorControl
     void AcclAngle(struct ACCL_T *accl);
     void UpdateMotorSpeed();
     int Clamp(int val, int min, int max);
+    void HandleCommand(JoystickState* state);
+    void PollCommand(JoystickState* state);
 };
 
 #endif
