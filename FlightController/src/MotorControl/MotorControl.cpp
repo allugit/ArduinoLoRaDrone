@@ -3,6 +3,7 @@
 // user controlled and current calculated pitch and roll
 double targetPitch, currentPitch, controlPitch;
 double targetRoll, currentRoll, controlRoll;
+double targetYaw, currentYaw, controlYaw;
 unsigned char targetThrottle;
 
 // PID tunings: porpotional, integral, derivative
@@ -33,6 +34,7 @@ Adafruit_PWMServoDriver pwm;
 // input, output, setpoint, pid tunings (kp, ki, kd)
 PID PIDPitch(&currentPitch, &controlPitch, &targetPitch, 0, 0, 0, DIRECT);
 PID PIDRoll(&currentRoll, &controlRoll, &targetRoll, 0, 0, 0, DIRECT);
+PID PIDYaw(&currentYaw, &controlYaw, &targetYaw, 0, 0, 0, DIRECT);
 
 void MotorControl::Init(double kp, double ki, double kd)
 {
@@ -44,6 +46,7 @@ void MotorControl::Init(double kp, double ki, double kd)
 
   PIDPitch.SetTunings(kp, ki, kd);
   PIDRoll.SetTunings(kp, ki, kd);
+  PIDYaw.SetTunings(kp, ki, kd);
 
   // 5 ms sample time, 200 Hz
   // this should be fast enough
@@ -55,12 +58,15 @@ void MotorControl::Init(double kp, double ki, double kd)
 
   currentPitch = 0;
   currentRoll = 0;
+  currentYaw = 0;
   controlPitch = 0;
   controlRoll = 0;
+  controlYaw = 0;
 
   targetThrottle = 0;
   targetPitch = 0;
   targetRoll = 0;
+  targetYaw = 0;
 
   // for joystick PID configuration
   dKp = Kp = kp;
@@ -106,6 +112,7 @@ void MotorControl::HandleJoystick(JoystickState state)
 
   // throttle is controlled directly
   targetThrottle = state.LY;
+  targetYaw = 0;
 
    if (targetThrottle < JOYSTICK_MIN_THROTTLE) {
      targetThrottle = 0;
@@ -159,6 +166,7 @@ void MotorControl::HandleCommand(JoystickState* state)
 
   if (xCenter && yCenter) {
     PIDPitch.SetTunings(Kp, Ki, Kd);
+    PIDRoll.SetTunings(Kp, Ki, Kd);
     PIDRoll.SetTunings(Kp, Ki, Kd);
 
     // Serial.println(selectedConfigIndex % 4);
@@ -272,6 +280,7 @@ void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyr
   // 2. use PID controller to control output value for motors
   PIDPitch.Compute();
   PIDRoll.Compute();
+  PIDYaw.Compute();
 
   // 3. calculate new motor speed
   UpdateMotorSpeed();
@@ -298,11 +307,12 @@ void MotorControl::UpdateMotorSpeed()
   if (now > nextPwmSetTime) {
     float cp = controlPitch * dampenPidOutput;
     float cr = controlRoll * dampenPidOutput;
+    float cy = 0;//controlYaw * dampenPidOutput;
 
-    int cwf = targetThrottle + cp + cr; // - Yaw
-    int ccwf = targetThrottle + cp - cr; // + Yaw
-    int ccwb = targetThrottle - cp - cr;  // + Yaw
-    int cwb = targetThrottle - cp + cr;  // - Yaw
+    int cwf = targetThrottle - cp + cr - cy;
+    int ccwf = targetThrottle - cp - cr + cy;
+    int ccwb = targetThrottle + cp - cr + cy;
+    int cwb = targetThrottle + cp + cr - cy;
 
     int max = 255;
 
@@ -356,6 +366,7 @@ void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro,
   // integrate gyro values
   currentRoll += (gyro->X - gyroOffsetX) * deltaTime;
   currentPitch -= (gyro->Y - gyroOffsetY) * deltaTime;
+  currentYaw += (gyro->Z - gyroOffsetZ) * deltaTime;
 
   // compensate drift with accel data, ignore large magnitudes
   // if the accelerometer data is within a 0.5-2G, then we will use that data
@@ -364,9 +375,11 @@ void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro,
   if (forceMagApprox > 0.5 && forceMagApprox < 1.5) {
     float rollAccl = atan2f(accl->Y, accl->Z) * 57.2957;
     float pitchAccl = atan2f(-accl->X, accl->Z) * 57.2957;
+    //float yawAccl = atan(accl->Z/sqrt(accl->X*accl->X + accl->Z*accl->Z)) * 57.2957;
 
     currentPitch = (1 - acclRatio) * currentPitch + pitchAccl * acclRatio;
     currentRoll = (1 - acclRatio) * currentRoll + rollAccl * acclRatio;
+    //currentYaw = (1 - acclRatio) * currentYaw + yawAccl * acclRatio;
   }
 }
 
