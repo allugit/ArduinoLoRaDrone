@@ -26,6 +26,7 @@ struct POLAR_T polar;
 float temp;
 float pressure;
 float altitude;
+unsigned char* buf;
 
 void calibrateGyroscope();
 void debugIMU(int debugMask);
@@ -36,7 +37,7 @@ void setup() {
   // Serial.begin(9600);
   // while(!Serial);
   pinMode(LED_BUILTIN, OUTPUT);
-
+  buf = (unsigned char*)malloc(PAYLOAD_LENGTH);
   comm.Init();
   imu.Init();
   motorControl.Init(1, 0, 0);
@@ -52,7 +53,7 @@ void setup() {
 
 void loop() {
   unsigned long ms = millis();
-  unsigned char* packet = comm.ReceiveRadioPacket();
+  unsigned char* packet = comm.ReceiveRadioPacket(buf);
 
   imu.ReadGyro(&gyro);
   imu.ReadAccel(&accl);
@@ -66,8 +67,6 @@ void loop() {
     motorControl.HandleJoystick(state);
     lastReceivedPacket = millis();
   }
-
-  free(packet);
 
   // no lora packet received for a while, go into safety landing
   if (ms > lastReceivedPacket + 2000) {

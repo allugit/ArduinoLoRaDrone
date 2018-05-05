@@ -9,7 +9,7 @@ unsigned char targetThrottle;
 // PID tunings: porpotional, integral, derivative
 double Kp, Ki, Kd; // current values
 double dKp, dKi, dKd; // default values
-double dampenPidOutput;
+double dampenJoystickInput;
 double* configIndexes[4];
 unsigned char selectedConfigIndex;
 
@@ -40,18 +40,19 @@ void MotorControl::Init(double kp, double ki, double kd)
 {
   PIDPitch.SetMode(AUTOMATIC);
   PIDRoll.SetMode(AUTOMATIC);
+  PIDYaw.SetMode(AUTOMATIC);
 
-  PIDPitch.SetOutputLimits(-180, 180); // 360 degrees
-  PIDRoll.SetOutputLimits(-180, 180);
+  PIDPitch.SetOutputLimits(-255, 255);
+  PIDRoll.SetOutputLimits(-255, 255);
+  PIDYaw.SetOutputLimits(-255, 255);
 
   PIDPitch.SetTunings(kp, ki, kd);
   PIDRoll.SetTunings(kp, ki, kd);
   PIDYaw.SetTunings(kp, ki, kd);
 
-  // 5 ms sample time, 200 Hz
-  // this should be fast enough
-  PIDPitch.SetSampleTime(5);
-  PIDRoll.SetSampleTime(5);
+  PIDPitch.SetSampleTime(1);
+  PIDRoll.SetSampleTime(1);
+  PIDYaw.SetSampleTime(1);
 
   pwm.begin();
   pwm.setPWMFreq(PWM_FREQ);
@@ -75,9 +76,9 @@ void MotorControl::Init(double kp, double ki, double kd)
   configIndexes[0] = &Kp;
   configIndexes[1] = &Ki;
   configIndexes[2] = &Kd;
-  configIndexes[3] = &dampenPidOutput;
+  configIndexes[3] = &acclRatio;
 
-  dampenPidOutput = 0.5f;
+  dampenJoystickInput = 0.5f;
   acclRatio = DEFAULT_ACCL_RATIO;
   gyroOffsetX = gyroOffsetY = gyroOffsetZ = 0;
 
@@ -167,7 +168,7 @@ void MotorControl::HandleCommand(JoystickState* state)
   if (xCenter && yCenter) {
     PIDPitch.SetTunings(Kp, Ki, Kd);
     PIDRoll.SetTunings(Kp, Ki, Kd);
-    PIDRoll.SetTunings(Kp, Ki, Kd);
+    PIDYaw.SetTunings(Kp, Ki, Kd);
 
     // Serial.println(selectedConfigIndex % 4);
     // Serial.println(acclRatio);
@@ -195,21 +196,10 @@ void MotorControl::HandleCommand(JoystickState* state)
 
 void MotorControl::PollCommand(JoystickState* state)
 {
-  if (!state->LZ) {
-    // accelerometer on/off
-    if (WaitForHoldCommand(&configCommandStart, 2000)) {
-      // acclRatio = 0 ignores accelerometer data
-      acclRatio = acclRatio == DEFAULT_ACCL_RATIO ? 0 : DEFAULT_ACCL_RATIO;
-      currentRoll = 0;
-      currentPitch = 0;
-      joystickCommandReceived = 5;
-    }
-  }
-  // reset values to default
-  else if (state->RX > DIR_LEFT) {
+  if (state->RX > DIR_LEFT) {
     if (WaitForHoldCommand(&configCommandStart, 2000)) {
       Kp = dKp; Ki = dKi; Kd = dKd;
-      dampenPidOutput = 0.5f;
+      dampenJoystickInput = 0.5f;
       acclRatio = DEFAULT_ACCL_RATIO;
       currentRoll = 0;
       currentPitch = 0;
@@ -224,14 +214,14 @@ void MotorControl::PollCommand(JoystickState* state)
     }
     // increment config value
     else if (state->RY > DIR_UP) {
-      double increment = selectedConfigIndex % 4 == 3 ? PID_DAMPEN_INCREMENT : PID_INCREMENT;
+      double increment = selectedConfigIndex % 4 == 3 ? ACCL_RATIO_INCREMENT : PID_INCREMENT;
       *configIndexes[selectedConfigIndex % 4] += increment;
       joystickCommandReceived = 2;
     }
     // decrement config value
     else if (state->RY < DIR_DOWN) {
       if (*configIndexes[selectedConfigIndex % 4] > 0) {
-        double increment = selectedConfigIndex % 4 == 3 ? PID_DAMPEN_INCREMENT : PID_INCREMENT;
+        double increment = selectedConfigIndex % 4 == 3 ? ACCL_RATIO_INCREMENT : PID_INCREMENT;
         *configIndexes[selectedConfigIndex % 4] -= increment;
         joystickCommandReceived = 1;
       }
@@ -301,13 +291,13 @@ void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyr
 // BackR = Throttle - Pitch + Yaw
 void MotorControl::UpdateMotorSpeed()
 {
-  unsigned long now = millis();
+  //unsigned long now = millis();
 
-  // this practically does nothing because PWM period is 1ms and flight controller loop is a lot slower than that
-  if (now > nextPwmSetTime) {
-    float cp = controlPitch * dampenPidOutput;
-    float cr = controlRoll * dampenPidOutput;
-    float cy = 0;//controlYaw * dampenPidOutput;
+  if (targetThrottle > 0)
+  {
+    float cp = controlPitch;
+    float cr = controlRoll;
+    float cy = 0;//controlYaw;
 
     int cwf = targetThrottle - cp + cr - cy;
     int ccwf = targetThrottle - cp - cr + cy;
@@ -337,13 +327,17 @@ void MotorControl::UpdateMotorSpeed()
     cwb = Clamp(cwb, 0, 255);
 
     SetMotorSpeed(cwf / 255.0f, cwb / 255.0f, ccwf / 255.0f, ccwb / 255.0f);
-    //SetMotorSpeed(targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f, targetThrottle / 255.0f);
-    nextPwmSetTime = now + PWM_PERIOD_MS;
+  }
+  else
+  {
+    SetMotorSpeed(0, 0, 0, 0);
   }
 }
 
 void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccwb)
 {
+  //DebugOrientation ();
+
   if (!flightActive) {
     pwm.setPWM(MOTOR_CWF, 0, 4096);
     pwm.setPWM(MOTOR_CWB, 0, 4096);
@@ -352,10 +346,10 @@ void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccw
   }
   else
   {
-    pwm.setPWM(MOTOR_CWF, 0, 4096 * scwf);
-    pwm.setPWM(MOTOR_CWB, 0, 4096 * scwb);
-    pwm.setPWM(MOTOR_CCWF, 0, 4096 * sccwf);
-    pwm.setPWM(MOTOR_CCWB, 0, 4096 * sccwb);
+    pwm.setPWM(MOTOR_CWF, 0, 4090 * scwf);
+    pwm.setPWM(MOTOR_CWB, 0, 4090 * scwb);
+    pwm.setPWM(MOTOR_CCWF, 0, 4090 * sccwf);
+    pwm.setPWM(MOTOR_CCWB, 0, 4090 * sccwb);
    }
 }
 
@@ -407,19 +401,27 @@ void MotorControl::SetGyroOffset(float x, float y, float z)
 
 void MotorControl::DebugOrientation()
 {
+  /*for (int i = 0; i < 4; i++)
+  {
+    Serial.print(*configIndexes[i]);
+    Serial.print(", ");
+  }
+
+  Serial.println();*/
+
   // Serial.print(currentPitch);
   // Serial.print(" : ");
   // Serial.print(controlPitch);
   // Serial.print(" : ");
-  // Serial.print(targetPitch);
-  // Serial.print(" , ");
+  Serial.print(targetPitch);
+  Serial.print(" , ");
   //
   // Serial.print(currentRoll);
   // Serial.print(" : ");
   // Serial.print(controlRoll);
-  // Serial.print(" : ");
-  // Serial.print(targetRoll);
-  // Serial.println("");
+  Serial.print(" : ");
+  Serial.print(targetRoll);
+   Serial.println("");
 
   // Serial.print(cwf.read());
   // Serial.print(", ");
@@ -429,7 +431,7 @@ void MotorControl::DebugOrientation()
   // Serial.print(" , ");
   // Serial.println(ccwb.read());
 
-  Serial.println(flightActive);
+  //Serial.println(flightActive);
 
   // Serial.print(gyro->X);
   // Serial.print(" : ");
