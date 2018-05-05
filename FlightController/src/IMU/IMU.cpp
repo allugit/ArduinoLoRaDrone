@@ -295,7 +295,7 @@ void IMU::InitAG(bool fInit)
     //WriteSPI(INST_AG, CTRL_REG6_XL, 0x60);
 
   	//10 Hz = 0x20, 119 Hz = 0x60
-  	WriteSPI(INST_AG, CTRL_REG1_G,0x80);
+  	WriteSPI(INST_AG, CTRL_REG1_G,0xA0);
   	//enable the axes outputs for Gyro
   	WriteSPI(INST_AG, CTRL_REG4,0x38);
 	}

@@ -69,18 +69,18 @@ void loop() {
   }
 
   // no lora packet received for a while, go into safety landing
-  if (ms > lastReceivedPacket + 2000) {
-    motorControl.SetMotorSpeed(0, 0, 0, 0);
-  }
-  else if (ms > lastReceivedPacket + 400) {
-    // todo: set target roll/pitch and throttle
-    motorControl.SetMotorSpeed(0.35, 0.35, 0.35, 0.35);
-  }
-  else {
+  // if (ms > lastReceivedPacket + 2000) {
+  //   motorControl.SetMotorSpeed(0, 0, 0, 0);
+  // }
+  // else if (ms > lastReceivedPacket + 400) {
+  //   // todo: set target roll/pitch and throttle
+  //   motorControl.SetMotorSpeed(0.35, 0.35, 0.35, 0.35);
+  // }
+  // else {
     motorControl.CalculateTargetAngles(&accl, &gyro);
-  }
+  // }
 
-  //calculateLoops();
+  calculateLoops();
   // temp = imu.ReadTempC();
   // pressure = imu.ReadPressurehPa();
   // altitude = imu.ConvPresToAltM(pressure);

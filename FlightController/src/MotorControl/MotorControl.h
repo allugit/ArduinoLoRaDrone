@@ -28,6 +28,7 @@ class MotorControl
 
   // low pass ratio for ComplementaryFilter
   #define DEFAULT_ACCL_RATIO 0.02
+  #define GYRO_SENSITIVITY 12.25f
 
   #define JOYSTICK_MIN_THROTTLE 16
   #define JOYSTICK_PITCH_LIMIT 10
@@ -49,7 +50,7 @@ class MotorControl
     void HandleJoystickCommands(JoystickState* state);
     void BlinkLed(int blinkTime, int count);
     int WaitForHoldCommand(unsigned long* start, int holdTime);
-    void ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro, float deltaTime);
+    void ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro, double deltaTime);
     void AcclAngle(struct ACCL_T *accl);
     void UpdateMotorSpeed();
     int Clamp(int val, int min, int max);

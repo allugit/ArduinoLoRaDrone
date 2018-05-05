@@ -261,11 +261,15 @@ void MotorControl::BlinkLed(int blinkTime, int count)
 
 void MotorControl::CalculateTargetAngles(struct ACCL_T *accl, struct GYRO_T *gyro)
 {
-  float deltaTime = (float)(millis() - lastUpdate) / 1000;
+  double deltaTime = (double)(millis() - lastUpdate) / 1000;
 
   // AcclAngle(accl); // using only accelerometer has lots of noise
   // 1. use complementary filter to filter out accelerometer noise
   ComplementaryFilter(accl, gyro, deltaTime);
+  //DebugOrientation ();
+
+  // AcclAngle(accl);
+  // DebugOrientation();
 
   // 2. use PID controller to control output value for motors
   PIDPitch.Compute();
@@ -336,8 +340,6 @@ void MotorControl::UpdateMotorSpeed()
 
 void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccwb)
 {
-  //DebugOrientation ();
-
   if (!flightActive) {
     pwm.setPWM(MOTOR_CWF, 0, 4096);
     pwm.setPWM(MOTOR_CWB, 0, 4096);
@@ -355,20 +357,20 @@ void MotorControl::SetMotorSpeed(float scwf, float scwb, float sccwf, float sccw
 
 // http://www.pieter-jan.com/node/11
 // currentAngle = (1 - lowPassRatio) * (currentAngle + gyro * dt) + lowPassRatio * (accl)
-void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro, float deltaTime)
+void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro, double deltaTime)
 {
   // integrate gyro values
-  currentRoll += (gyro->X - gyroOffsetX) * deltaTime;
-  currentPitch -= (gyro->Y - gyroOffsetY) * deltaTime;
-  currentYaw += (gyro->Z - gyroOffsetZ) * deltaTime;
+  currentRoll += GYRO_SENSITIVITY * (gyro->X - gyroOffsetX) * deltaTime;
+  currentPitch -= GYRO_SENSITIVITY * (gyro->Y - gyroOffsetY) * deltaTime;
+  // currentYaw += GYRO_SENSITIVITY * (gyro->Z - gyroOffsetZ) * deltaTime;
 
   // compensate drift with accel data, ignore large magnitudes
   // if the accelerometer data is within a 0.5-2G, then we will use that data
   int forceMagApprox = abs(accl->X) + abs(accl->Y) + abs(accl->Z);
 
   if (forceMagApprox > 0.5 && forceMagApprox < 1.5) {
-    float rollAccl = atan2f(accl->Y, accl->Z) * 57.2957;
-    float pitchAccl = atan2f(-accl->X, accl->Z) * 57.2957;
+    float rollAccl = -atan2f(accl->Y, accl->Z) * 57.2957;
+    float pitchAccl = -atan2f(accl->X, accl->Z) * 57.2957;
     //float yawAccl = atan(accl->Z/sqrt(accl->X*accl->X + accl->Z*accl->Z)) * 57.2957;
 
     currentPitch = (1 - acclRatio) * currentPitch + pitchAccl * acclRatio;
@@ -380,8 +382,11 @@ void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro,
 // don't use during flight as accelometer has a lot of noise
 void MotorControl::AcclAngle(struct ACCL_T *accl)
 {
-  currentPitch = atan2f(accl->Y, sqrt(accl->X * accl->X + accl->Z * accl->Z)) * 57.2957;
-  currentRoll = atan2f(-accl->X, accl->Z) * 57.2957;
+  // currentPitch = atan2f(accl->Y, sqrt(accl->X * accl->X + accl->Z * accl->Z)) * 57.2957;
+  // currentRoll = atan2f(-accl->X, accl->Z) * 57.2957;
+
+  currentPitch = -atan2f(accl->X, accl->Z) * 57.2957;
+  currentRoll = -atan2f(accl->Y, accl->Z) * 57.2957;
 }
 
 // minor detail: with pointers it is faster because value does not need to be copied
@@ -406,22 +411,23 @@ void MotorControl::DebugOrientation()
     Serial.print(*configIndexes[i]);
     Serial.print(", ");
   }
-
   Serial.println();*/
 
   // Serial.print(currentPitch);
   // Serial.print(" : ");
   // Serial.print(controlPitch);
   // Serial.print(" : ");
-  Serial.print(targetPitch);
-  Serial.print(" , ");
-  //
+  // Serial.print(targetPitch);
+  // Serial.print(" , ");
+  // //
   // Serial.print(currentRoll);
   // Serial.print(" : ");
+  // Serial.println();
+
   // Serial.print(controlRoll);
-  Serial.print(" : ");
-  Serial.print(targetRoll);
-   Serial.println("");
+  // Serial.print(" : ");
+  // Serial.print(targetRoll);
+
 
   // Serial.print(cwf.read());
   // Serial.print(", ");
