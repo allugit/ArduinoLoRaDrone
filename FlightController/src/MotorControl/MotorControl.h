@@ -28,7 +28,7 @@ class MotorControl
 
   // low pass ratio for ComplementaryFilter
   #define DEFAULT_ACCL_RATIO 0.02
-  #define GYRO_SENSITIVITY 12.25f
+  #define GYRO_SENSITIVITY 7.5
 
   #define JOYSTICK_MIN_THROTTLE 16
   #define JOYSTICK_PITCH_LIMIT 10

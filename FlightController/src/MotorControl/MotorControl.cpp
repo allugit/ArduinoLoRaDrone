@@ -303,10 +303,10 @@ void MotorControl::UpdateMotorSpeed()
     float cr = controlRoll;
     float cy = 0;//controlYaw;
 
-    int cwf = targetThrottle - cp + cr - cy;
-    int ccwf = targetThrottle - cp - cr + cy;
-    int ccwb = targetThrottle + cp - cr + cy;
-    int cwb = targetThrottle + cp + cr - cy;
+    int cwf = targetThrottle - cp - cr - cy;
+    int ccwf = targetThrottle - cp + cr + cy;
+    int ccwb = targetThrottle + cp + cr + cy;
+    int cwb = targetThrottle + cp - cr - cy;
 
     int max = 255;
 
@@ -366,9 +366,10 @@ void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro,
 
   // compensate drift with accel data, ignore large magnitudes
   // if the accelerometer data is within a 0.5-2G, then we will use that data
-  int forceMagApprox = abs(accl->X) + abs(accl->Y) + abs(accl->Z);
+  float forceMagApprox = abs(accl->X) + abs(accl->Y) + abs(accl->Z);
 
-  if (forceMagApprox > 0.5 && forceMagApprox < 1.5) {
+  //
+  if (forceMagApprox > 0.5 && forceMagApprox < 2.0) {
     float rollAccl = -atan2f(accl->Y, accl->Z) * 57.2957;
     float pitchAccl = -atan2f(accl->X, accl->Z) * 57.2957;
     //float yawAccl = atan(accl->Z/sqrt(accl->X*accl->X + accl->Z*accl->Z)) * 57.2957;
@@ -413,15 +414,15 @@ void MotorControl::DebugOrientation()
   }
   Serial.println();*/
 
-  // Serial.print(currentPitch);
-  // Serial.print(" : ");
+  Serial.print(currentPitch);
+  Serial.print(" : ");
   // Serial.print(controlPitch);
   // Serial.print(" : ");
   // Serial.print(targetPitch);
   // Serial.print(" , ");
   // //
-  // Serial.print(currentRoll);
-  // Serial.print(" : ");
+  Serial.print(currentRoll);
+  Serial.print(" : ");
   // Serial.println();
 
   // Serial.print(controlRoll);
