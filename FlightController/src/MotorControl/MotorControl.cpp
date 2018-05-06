@@ -10,7 +10,7 @@ unsigned char targetThrottle;
 double Kp, Ki, Kd; // current values
 double dKp, dKi, dKd; // default values
 double dampenJoystickInput;
-double* configIndexes[4];
+double* configIndexes[5];
 unsigned char selectedConfigIndex;
 
 double acclRatio;
@@ -76,7 +76,8 @@ void MotorControl::Init(double kp, double ki, double kd)
   configIndexes[0] = &Kp;
   configIndexes[1] = &Ki;
   configIndexes[2] = &Kd;
-  configIndexes[3] = &acclRatio;
+  configIndexes[3] = &dampenJoystickInput;
+  configIndexes[4] = &acclRatio;
 
   dampenJoystickInput = 0.5f;
   acclRatio = DEFAULT_ACCL_RATIO;
@@ -124,8 +125,8 @@ void MotorControl::HandleJoystick(JoystickState state)
   // and inputed to PID-controller, output is -255 to 255 which is summed with targetThrottle
   // joystick state is a byte 0-255
   // scale against max pitch and roll
-  targetPitch = state.RY * (JOYSTICK_PITCH_LIMIT * 2.0f / 255.0f) - JOYSTICK_PITCH_LIMIT;
-  targetRoll = state.RX * (JOYSTICK_ROLL_LIMIT * 2.0f / 255.0f) - JOYSTICK_ROLL_LIMIT;
+  targetPitch =  dampenJoystickInput * (state.RY * (JOYSTICK_PITCH_LIMIT * 2.0f / 255.0f) - JOYSTICK_PITCH_LIMIT);
+  targetRoll = dampenJoystickInput * (state.RX * (JOYSTICK_ROLL_LIMIT * 2.0f / 255.0f) - JOYSTICK_ROLL_LIMIT);
   if (abs(targetPitch) < 1) targetPitch = 0;
   if (abs(targetRoll) < 1) targetRoll = 0;
 
@@ -210,19 +211,19 @@ void MotorControl::PollCommand(JoystickState* state)
     // change config value
     if (state->RX < DIR_RIGHT) {
       selectedConfigIndex++;
-      joystickCommandReceived = (selectedConfigIndex % 4) + 1;
+      joystickCommandReceived = (selectedConfigIndex % 5) + 1;
     }
     // increment config value
     else if (state->RY > DIR_UP) {
-      double increment = selectedConfigIndex % 4 == 3 ? ACCL_RATIO_INCREMENT : PID_INCREMENT;
-      *configIndexes[selectedConfigIndex % 4] += increment;
+      double increment = selectedConfigIndex % 5 == 4 ? ACCL_RATIO_INCREMENT : PID_INCREMENT;
+      *configIndexes[selectedConfigIndex % 5] += increment;
       joystickCommandReceived = 2;
     }
     // decrement config value
     else if (state->RY < DIR_DOWN) {
-      if (*configIndexes[selectedConfigIndex % 4] > 0) {
-        double increment = selectedConfigIndex % 4 == 3 ? ACCL_RATIO_INCREMENT : PID_INCREMENT;
-        *configIndexes[selectedConfigIndex % 4] -= increment;
+      if (*configIndexes[selectedConfigIndex % 5] > 0) {
+        double increment = selectedConfigIndex % 5 == 4 ? ACCL_RATIO_INCREMENT : PID_INCREMENT;
+        *configIndexes[selectedConfigIndex % 5] -= increment;
         joystickCommandReceived = 1;
       }
     }
@@ -369,7 +370,7 @@ void MotorControl::ComplementaryFilter(struct ACCL_T *accl, struct GYRO_T *gyro,
   float forceMagApprox = abs(accl->X) + abs(accl->Y) + abs(accl->Z);
 
   //
-  if (forceMagApprox > 0.5 && forceMagApprox < 2.0) {
+  if (forceMagApprox < 2) {
     float rollAccl = -atan2f(accl->Y, accl->Z) * 57.2957;
     float pitchAccl = -atan2f(accl->X, accl->Z) * 57.2957;
     //float yawAccl = atan(accl->Z/sqrt(accl->X*accl->X + accl->Z*accl->Z)) * 57.2957;
@@ -407,28 +408,28 @@ void MotorControl::SetGyroOffset(float x, float y, float z)
 
 void MotorControl::DebugOrientation()
 {
-  /*for (int i = 0; i < 4; i++)
-  {
-    Serial.print(*configIndexes[i]);
-    Serial.print(", ");
-  }
-  Serial.println();*/
+  // for (int i = 0; i < 5; i++)
+  // {
+  //   Serial.print(*configIndexes[i]);
+  //   Serial.print(", ");
+  // }
+  // Serial.println();
 
-  Serial.print(currentPitch);
-  Serial.print(" : ");
-  // Serial.print(controlPitch);
+  // Serial.print(currentPitch);
   // Serial.print(" : ");
+  Serial.print(controlPitch);
+  Serial.print(" : ");
   // Serial.print(targetPitch);
   // Serial.print(" , ");
   // //
-  Serial.print(currentRoll);
-  Serial.print(" : ");
+  // Serial.print(currentRoll);
+  // Serial.print(" : ");
   // Serial.println();
 
-  // Serial.print(controlRoll);
+  Serial.print(controlRoll);
   // Serial.print(" : ");
   // Serial.print(targetRoll);
-
+  Serial.println();
 
   // Serial.print(cwf.read());
   // Serial.print(", ");
